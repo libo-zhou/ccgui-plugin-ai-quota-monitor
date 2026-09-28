@@ -1,7 +1,7 @@
 {
   "id": "ai-quota-monitor",
   "name": "AI 配额与用量监控",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "sdkVersion": "^0.3.7",
   "tier": "js",
   "description": "当前支持 Google Antigravity（Gemini）和 OpenAI Codex，查看可用额度、用量与重置时间；其他 AI 服务待适配。支持底部状态栏、详情弹窗、自动刷新及当前会话联动。",
@@ -9,7 +9,6 @@
     "storage",
     "events",
     "ui:status-bar",
-    "ui:settings-section",
     "ui:command",
     "exec:omp",
     "exec:node",

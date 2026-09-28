@@ -28,7 +28,7 @@ CC GUI 的 AI 配额查询插件。当前支持 **Google Antigravity（Gemini）
 - `network:chatgpt.com`：通过 CC GUI 的网络代理向 `chatgpt.com` 请求 Codex 用量，并将令牌作为授权头发送。请求地址为 `https://chatgpt.com/backend-api/wham/usage`。此用量接口不是面向第三方插件的公开稳定 API，服务调整时此功能可能需要更新。
 - `storage`：在插件隔离存储中保存额度缓存和显示设置。
 - `events`：读取当前会话的引擎标识，用于状态栏自动聚焦；不读取会话消息。
-- `ui:status-bar`、`ui:settings-section`、`ui:command`：提供状态栏、设置和手动刷新命令。
+- 插件设置页由宿主根据 configSchema 显示自动刷新周期、状态栏模式和告警阈值；ui:status-bar 与 ui:command 提供底栏摘要及手动刷新命令。
 
 插件不向插件作者或其他服务发送数据。Codex 用量请求只发往上面声明的 `chatgpt.com` 域名；Antigravity 查询由本机 OMP 完成。
 
