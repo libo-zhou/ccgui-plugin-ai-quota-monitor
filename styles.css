@@ -1,0 +1,231 @@
+/* AI Quota Monitor - Theme-Aware Styles */
+
+/* ── Status Bar Chip ────────────────────────────────────────── */
+.gqc-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary, var(--text-secondary, #52525b));
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gqc-status-chip:hover {
+  background: var(--color-background-tertiary-hover, var(--background-tertiary-hover, rgba(128, 128, 128, 0.08)));
+  color: var(--color-text-primary, var(--text-primary, #18181b));
+}
+
+.gqc-status-chip.is-active {
+  background: var(--color-background-secondary-hover, var(--background-secondary-hover, rgba(128, 128, 128, 0.1)));
+  border-color: var(--color-separator-border, var(--separator-border, rgba(128, 128, 128, 0.2)));
+  color: var(--color-text-primary, var(--text-primary, #18181b));
+}
+
+/* ── Status Indicator Dot ────────────────────────────────────────────────── */
+.gqc-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  margin-right: 1px;
+}
+
+.gqc-dot-safe {
+  background-color: #16a34a;
+  box-shadow: 0 0 3px rgba(22, 163, 74, 0.5);
+}
+
+.gqc-dot-warn {
+  background-color: #d97706;
+  box-shadow: 0 0 3px rgba(217, 119, 6, 0.5);
+}
+
+.gqc-dot-danger {
+  background-color: #dc2626;
+  box-shadow: 0 0 4px rgba(220, 38, 38, 0.6);
+}
+
+/* ── Typography & Split Metrics ──────────────────────────────────────────── */
+.gqc-chip-group {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.gqc-chip-brand {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.gqc-chip-brand.is-gemini {
+  color: #0284c7;
+}
+
+.gqc-chip-brand.is-codex {
+  color: #059669;
+}
+
+.gqc-chip-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-tertiary, var(--text-tertiary, #9ca3af));
+  letter-spacing: 0.01em;
+}
+
+.gqc-chip-val {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary, var(--text-primary, #27272a));
+}
+
+.gqc-chip-val.is-warn {
+  color: #d97706;
+}
+
+.gqc-chip-val.is-danger {
+  color: #dc2626;
+}
+
+.gqc-chip-sep {
+  display: inline-block;
+  width: 1px;
+  height: 9px;
+  background: var(--color-separator-border, var(--separator-border, rgba(128, 128, 128, 0.25)));
+  margin: 0 1.5px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* ── Floating Popover (弹框) ─────────────────────────────────────────────── */
+.gqc-popover {
+  position: fixed;
+  bottom: 34px;
+  right: 12px;
+  width: 350px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 48px);
+  z-index: 9999;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.16), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  background: var(--color-background-primary-default, var(--background-primary-default, #ffffff));
+  border: 1px solid var(--color-separator-border, var(--separator-border, rgba(128, 128, 128, 0.2)));
+  color: var(--color-text-primary, var(--text-primary, #18181b));
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: inherit;
+  font-size: 12px;
+  overflow-y: auto;
+  animation: gqc-popover-appear 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes gqc-popover-appear {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.gqc-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: transparent;
+}
+
+.gqc-popover-card {
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-separator-border, var(--separator-border, rgba(128, 128, 128, 0.15)));
+  background: var(--color-background-secondary-default, var(--background-secondary-default, rgba(128, 128, 128, 0.05)));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gqc-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-background-tertiary-default, var(--background-tertiary-default, rgba(128, 128, 128, 0.2)));
+  overflow: hidden;
+}
+
+.gqc-progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.35s ease;
+}
+
+.gqc-tab-btn {
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #71717a);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gqc-tab-btn:hover {
+  background: var(--color-background-tertiary-hover, rgba(128, 128, 128, 0.1));
+  color: var(--color-text-primary, #18181b);
+}
+
+.gqc-tab-btn.is-active {
+  background: var(--color-background-tertiary-default, rgba(128, 128, 128, 0.15));
+  color: var(--color-text-primary, #18181b);
+  font-weight: 600;
+}
+
+.gqc-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary, var(--text-secondary, #71717a));
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.gqc-icon-button:hover {
+  background: var(--color-background-tertiary-hover, var(--background-tertiary-hover, rgba(128, 128, 128, 0.12)));
+  color: var(--color-text-primary, var(--text-primary, #18181b));
+}
+
+.gqc-spin {
+  animation: gqc-spin-anim 0.8s linear infinite;
+}
+
+@keyframes gqc-spin-anim {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

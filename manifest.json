@@ -1,0 +1,72 @@
+{
+  "id": "ai-quota-monitor",
+  "name": "AI 配额与用量监控",
+  "version": "0.3.0",
+  "sdkVersion": "^0.3.7",
+  "tier": "js",
+  "description": "当前支持 Google Antigravity（Gemini）和 OpenAI Codex，查看可用额度、用量与重置时间；其他 AI 服务待适配。支持底部状态栏、详情弹窗、自动刷新及当前会话联动。",
+  "permissions": [
+    "storage",
+    "events",
+    "ui:status-bar",
+    "ui:settings-section",
+    "ui:command",
+    "exec:omp",
+    "exec:node",
+    "network:chatgpt.com"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "autoRefreshMinutes": {
+        "type": "number",
+        "title": "后台自动刷新周期（分钟）",
+        "description": "设置后台自动查询周限的间隔；设为 0 表示关闭自动刷新（仅手动刷新）。",
+        "default": 30,
+        "minimum": 0,
+        "maximum": 120
+      },
+      "statusBarDisplay": {
+        "type": "string",
+        "title": "状态栏显示模式",
+        "description": "auto 为智能模式（根据当前会话自动切换 Gemini / Codex 限额）；亦可手动固定。",
+        "enum": [
+          "auto",
+          "all",
+          "weekly_only",
+          "gemini_only",
+          "codex_only"
+        ],
+        "default": "auto"
+      },
+      "showStatusBarChip": {
+        "type": "boolean",
+        "title": "在底部状态栏展示",
+        "description": "在应用右下角状态栏展示配额胶囊。",
+        "default": true
+      },
+      "warningThreshold": {
+        "type": "number",
+        "title": "周限低额度告警阈值（%）",
+        "description": "当当前模型剩余百分比低于此数值时，指示点显示为红色警示。",
+        "default": 20,
+        "minimum": 5,
+        "maximum": 50
+      }
+    }
+  },
+  "minAppVersion": "1.0.8",
+  "author": "libo-zhou",
+  "repo": "libo-zhou/ccgui-plugin-ai-quota-monitor",
+  "keywords": [
+    "ai",
+    "quota",
+    "usage",
+    "Gemini",
+    "Codex"
+  ],
+  "screenshots": [
+    "docs/codex-quota.png"
+  ],
+  "license": "MIT"
+}
