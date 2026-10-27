@@ -156,6 +156,49 @@ export default function activate(ctx) {
     );
   }
 
+  function CodeBuddyIcon({ size = 12, className, style }) {
+    return h(
+      "svg",
+      {
+        width: size,
+        height: size,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        className,
+        style: Object.assign({ flexShrink: 0, display: "inline-block", verticalAlign: "middle" }, style),
+      },
+      h(
+        "defs",
+        null,
+        h(
+          "radialGradient",
+          {
+            id: "gqc-codebuddy-g0",
+            cx: "0",
+            cy: "0",
+            r: "1",
+            gradientUnits: "userSpaceOnUse",
+            gradientTransform: "matrix(-9.00009 -16 16 -9.00009 21 24.5)",
+          },
+          h("stop", { stopColor: "#2EA99D" }),
+          h("stop", { offset: "1", stopColor: "#6C4DFF" })
+        )
+      ),
+      h("path", {
+        d: "M18.821 0H5.18A5.179 5.179 0 000 5.179V18.82A5.179 5.179 0 005.179 24H18.82A5.179 5.179 0 0024 18.821V5.18A5.179 5.179 0 0018.821 0z",
+        fill: "url(#gqc-codebuddy-g0)",
+      }),
+      h("path", {
+        d: "M18.777 1.647c.28-.02.536.114.972.51 1.018.926 2.437 2.828 3.318 4.452l.34.631.482.24.11.06v3.638a5.206 5.206 0 00-5.32-1.23c-.491.166-1.021.471-2.08 1.082l-6.09 3.516c-1.057.61-1.586.916-1.975 1.259a5.208 5.208 0 00-1.493 5.572c.165.49.471 1.02 1.082 2.08l.315.543h-3.26c-.685 0-1.34-.135-1.939-.377-.169-.956-.009-1.789.469-2.335.158-.18.164-.189.13-.493a11.846 11.846 0 01-.057-1.711l.02-.444-.667-1.18C2.1 15.622 1.445 14.078 1.192 12.9c-.133-.647-.125-.934.04-1.146.1-.128.427-.261.822-.334.994-.175 3.162-.017 5.575.41l.25.043.551-.487c.915-.81 1.522-1.264 2.641-1.962 1.167-.73 2.484-1.331 3.967-1.807l.476-.152.261-.688c.937-2.471 1.896-4.293 2.58-4.9.235-.21.25-.22.422-.23z",
+        fill: "#fff",
+      }),
+      h("path", {
+        d: "M12.139 18.2a1.203 1.203 0 011.642.44l1.296 2.243a1.204 1.204 0 01-2.083 1.203l-1.296-2.243a1.203 1.203 0 01.44-1.644zM18.629 14.452a1.203 1.203 0 011.642.44l1.295 2.244a1.203 1.203 0 11-2.083 1.203l-1.295-2.243a1.203 1.203 0 01.44-1.644z",
+        fill: "#fff",
+      })
+    );
+  }
+
   function RefreshIcon({ spinning, size = 13 }) {
     return h(
       "svg",
@@ -324,6 +367,31 @@ export default function activate(ctx) {
     }
   }
 
+  // ── CodeBuddy (Tencent Copilot) 抓取与解析 ──────────────────────────────────
+  async function fetchCodeBuddyQuota() {
+    const nodeInlineCode = 'const fs=require("fs"),path=require("path"),os=require("os"),https=require("https");(async function(){try{const dirs=[];if(process.platform==="win32"){const l=process.env.LOCALAPPDATA||path.join(os.homedir(),"AppData","Local");dirs.push(path.join(l,"CodeBuddyExtension","Data","Public","auth"));}else if(process.platform==="darwin"){dirs.push(path.join(os.homedir(),"Library","Application Support","CodeBuddyExtension","Data","Public","auth"));}else{const x=process.env.XDG_DATA_HOME||path.join(os.homedir(),".local","share");dirs.push(path.join(x,"CodeBuddyExtension","Data","Public","auth"));}dirs.push(path.join(os.homedir(),".codebuddy","auth"));const files=[];for(const d of dirs){if(fs.existsSync(d)){try{for(const f of fs.readdirSync(d)){if(f.endsWith(".info")){const fp=path.join(d,f);try{files.push({p:fp,m:fs.statSync(fp).mtimeMs});}catch(_){}}}}catch(_){}}}files.sort((a,b)=>b.m-a.m);let cred=null;for(const it of files){try{const d=JSON.parse(fs.readFileSync(it.p,"utf8"));const token=d.auth&&(typeof d.auth.accessToken==="string"?d.auth.accessToken:d.auth.accessToken&&d.auth.accessToken.token);if(token){const acc=d.account||{};cred={token,uid:acc.uid||"",enterpriseId:acc.enterpriseId||"",enterpriseName:acc.enterpriseName||"",userName:acc.enterpriseUserName||acc.displayName||acc.nickname||"",accountType:acc.type||"",domain:(d.auth&&d.auth.domain)||"www.codebuddy.cn"};break;}}catch(_){}}if(!cred){console.log(JSON.stringify({error:"未检测到 CodeBuddy 登录"}));return;}function requestPost(urlPath,body){return new Promise((resolve,reject)=>{const data=JSON.stringify(body||{});const req=https.request({hostname:"copilot.tencent.com",path:urlPath,method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+cred.token,"X-User-Id":cred.uid,"X-Enterprise-Id":cred.enterpriseId,"X-Tenant-Id":cred.enterpriseId,"X-Domain":cred.domain,"X-Product":"SaaS","X-IDE-Name":"CodeBuddyIDE","User-Agent":"CLI/2.177.0 CodeBuddy/2.177.0"},timeout:15000},res=>{let buf="";res.on("data",c=>buf+=c);res.on("end",()=>{try{resolve({status:res.statusCode,data:JSON.parse(buf)});}catch(e){resolve({status:res.statusCode,raw:buf});}});});req.on("error",reject);req.on("timeout",()=>{req.destroy();reject(new Error("网络请求超时"));});req.write(data);req.end();});}let res=null;if(cred.enterpriseId){try{res=await requestPost("/billing/meter/get-enterprise-user-usage",{});}catch(_){}}const rData=res&&res.data&&res.data.data;if(rData&&typeof rData.credit==="number"){const limit=typeof rData.limitNum==="number"?rData.limitNum:0;const used=Math.round(rData.credit*10)/10;const left=limit===-1?null:Math.max(0,Math.round((limit-used)*10)/10);const remainingPercent=limit>0?Math.max(0,Math.min(100,Math.round((left/limit)*1000)/10)):limit===-1?100:0;const usedPercent=limit>0?Math.max(0,Math.min(100,Math.round((used/limit)*1000)/10)):0;let resetsAt=null;if(rData.cycleResetTime||rData.cycleEndTime){const parsed=Date.parse((rData.cycleResetTime||rData.cycleEndTime).replace(/-/g,"/"));if(!isNaN(parsed)) resetsAt=parsed;}console.log(JSON.stringify({ok:true,enterpriseName:cred.enterpriseName,userName:cred.userName,accountType:cred.accountType,uid:cred.uid,limitNum:limit,used,left,remainingPercent,usedPercent,cycleStartTime:rData.cycleStartTime,cycleEndTime:rData.cycleEndTime,resetsAt,fetchedAt:Date.now()}));return;}const sumRes=await requestPost("/billing/meter/get-user-resource-summary",{});const sData=sumRes&&sumRes.data&&sumRes.data.data;if(sData){console.log(JSON.stringify({ok:true,enterpriseName:cred.enterpriseName,userName:cred.userName,accountType:cred.accountType,uid:cred.uid,limitNum:null,used:0,left:null,remainingPercent:100,usedPercent:0,packages:sData.Packages||[],fetchedAt:Date.now()}));return;}console.log(JSON.stringify({error:res?.data?.msg||"查询 CodeBuddy 额度失败"}));}catch(err){console.log(JSON.stringify({error:err.message||String(err)}));}})();';
+
+    try {
+      const res = await ctx.bridge.invoke("plugin_exec_run", {
+        bin: "node",
+        args: ["-e", nodeInlineCode],
+        timeoutMs: 25000,
+      });
+
+      if (res.code !== 0) {
+        return { error: `Node 退出码 ${res.code}` };
+      }
+
+      const parsed = JSON.parse(res.stdout);
+      if (parsed.error) {
+        return { error: parsed.error };
+      }
+      return parsed;
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
+  }
+
   function preserveQuotaAfterFailure(result, previous) {
     if (result && !result.error) return result;
     if (previous && !previous.error) {
@@ -335,7 +403,7 @@ export default function activate(ctx) {
     return result || { error: "查询失败" };
   }
 
-  // ── 并行抓取两个模型的配额 ──────────────────────────────────────────────────
+  // ── 并行抓取模型配额与用量 ──────────────────────────────────────────────────
   async function fetchQuota(force = false) {
     if (isFetching) return;
     isFetching = true;
@@ -343,19 +411,22 @@ export default function activate(ctx) {
     notifySubscribers();
 
     try {
-      const [geminiResult, codexResult] = await Promise.all([
+      const [geminiResult, codexResult, codebuddyResult] = await Promise.all([
         fetchGeminiQuota(),
         fetchCodexQuota(),
+        fetchCodeBuddyQuota(),
       ]);
 
       const hasFreshResult =
-        (geminiResult && !geminiResult.error) || (codexResult && !codexResult.error);
+        (geminiResult && !geminiResult.error) ||
+        (codexResult && !codexResult.error) ||
+        (codebuddyResult && !codebuddyResult.error);
       const merged = {
         fetchedAt: hasFreshResult ? Date.now() : cachedData ? cachedData.fetchedAt : null,
         gemini: preserveQuotaAfterFailure(geminiResult, cachedData && cachedData.gemini),
         codex: preserveQuotaAfterFailure(codexResult, cachedData && cachedData.codex),
+        codebuddy: preserveQuotaAfterFailure(codebuddyResult, cachedData && cachedData.codebuddy),
       };
-
       cachedData = merged;
       fetchError = null;
       await ctx.storage.set("cached_quota", merged);
@@ -614,12 +685,210 @@ export default function activate(ctx) {
     );
   }
 
-  // ── 弹出详情弹框组件 (Dual-Model Popover Modal) ───────────────────────────
+  // ── CodeBuddy 账号积分指标卡片渲染辅助 ─────────────────────────────────────
+  function renderCodeBuddyCards(title, BrandIcon, modelData, config) {
+    if (!modelData || modelData.error) {
+      return h(
+        "div",
+        { className: "gqc-popover-card" },
+        h(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: "6px", fontWeight: 600 } },
+          h(BrandIcon, { size: 14 }),
+          h("span", null, title)
+        ),
+        h(
+          "div",
+          { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "11px", marginTop: "4px" } },
+          modelData && modelData.error ? modelData.error : "暂无 CodeBuddy 积分数据"
+        )
+      );
+    }
+
+    const isUnlimited = modelData.limitNum === -1;
+    const tone = isUnlimited ? "safe" : getStatusTone(modelData.remainingPercent, config && config.warningThreshold);
+    const color = getToneColor(tone);
+
+    function formatNumber(num) {
+      if (typeof num !== "number") return "--";
+      return num.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+    }
+
+    let typeLabel = "CodeBuddy";
+    if (modelData.accountType) {
+      const t = String(modelData.accountType).toLowerCase();
+      if (t === "ultimate") typeLabel = "旗舰版";
+      else if (t === "pro") typeLabel = "专业版";
+      else if (t === "personal") typeLabel = "个人版";
+      else typeLabel = modelData.accountType;
+    }
+
+    const accountSubtitle = [
+      modelData.userName,
+      modelData.enterpriseName,
+    ].filter(Boolean).join(" · ");
+
+    return h(
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: "8px" } },
+      // 头部账号
+      h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: "11px",
+            color: "var(--color-text-secondary, #71717a)",
+          },
+        },
+        h(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: "5px" } },
+          h(BrandIcon, { size: 14 }),
+          h("span", { style: { fontWeight: 600, color: "var(--color-text-primary, #18181b)" } }, title),
+          h(
+            "span",
+            {
+              style: {
+                padding: "1px 5px",
+                borderRadius: "3px",
+                fontSize: "9.5px",
+                fontWeight: 600,
+                background: "rgba(46, 169, 157, 0.12)",
+                color: "#2ea99d",
+              },
+            },
+            typeLabel
+          )
+        ),
+        h(
+          "span",
+          {
+            style: {
+              fontSize: "11px",
+              color: "var(--color-text-secondary, #71717a)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: "180px",
+            },
+          },
+          accountSubtitle || modelData.uid || ""
+        )
+      ),
+      modelData.refreshError
+        ? h(
+            "div",
+            {
+              title: modelData.refreshError,
+              style: {
+                color: "#b45309",
+                fontSize: "10px",
+                lineHeight: "1.3",
+                marginTop: "-4px",
+              },
+            },
+            "刷新失败，当前显示上次成功的额度"
+          )
+        : null,
+
+      // 月度积分余额卡片
+      h(
+        "div",
+        { className: "gqc-popover-card" },
+        h(
+          "div",
+          { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" } },
+          h(
+            "span",
+            { style: { fontWeight: 600, fontSize: "11.5px", color: "var(--color-text-primary, #18181b)" } },
+            "本月积分余额 (Monthly)"
+          ),
+          h(
+            "span",
+            { style: { fontSize: "17px", fontWeight: 700, color } },
+            isUnlimited ? "不限额" : `${modelData.remainingPercent}%`
+          )
+        ),
+        h(
+          "div",
+          { className: "gqc-progress-track" },
+          h("div", {
+            className: "gqc-progress-bar",
+            style: {
+              width: `${isUnlimited ? 100 : Math.max(0, Math.min(100, modelData.remainingPercent))}%`,
+              backgroundColor: color,
+            },
+          })
+        ),
+        h(
+          "div",
+          {
+            style: {
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "4px 8px",
+              fontSize: "11px",
+              color: "var(--color-text-secondary, #71717a)",
+            },
+          },
+          h(
+            "div",
+            null,
+            "剩余: ",
+            h("b", { style: { color: "var(--color-text-primary, #18181b)" } }, isUnlimited ? "无限制" : `${formatNumber(modelData.left)} 积分`)
+          ),
+          h(
+            "div",
+            null,
+            "已用: ",
+            h("b", { style: { color: "var(--color-text-primary, #18181b)" } }, `${formatNumber(modelData.used)} 积分`)
+          ),
+          h(
+            "div",
+            null,
+            "总额: ",
+            h("b", { style: { color: "var(--color-text-primary, #18181b)" } }, isUnlimited ? "无限制" : `${formatNumber(modelData.limitNum)} 积分`)
+          ),
+          h(
+            "div",
+            null,
+            "已用占比: ",
+            h("b", { style: { color: "var(--color-text-primary, #18181b)" } }, `${modelData.usedPercent}%`)
+          ),
+          modelData.resetsAt
+            ? h(
+                "div",
+                { style: { gridColumn: "1 / -1" } },
+                "重置倒计时: ",
+                h("b", { style: { color: "var(--color-text-primary, #18181b)" } }, formatResetTime(modelData.resetsAt)),
+                ` (${formatExactDate(modelData.resetsAt)})`
+              )
+            : null,
+          modelData.cycleStartTime && modelData.cycleEndTime
+            ? h(
+                "div",
+                { style: { gridColumn: "1 / -1", fontSize: "10px", color: "var(--color-text-tertiary, #a1a1aa)" } },
+                `周期: ${modelData.cycleStartTime.slice(0, 10)} ~ ${modelData.cycleEndTime.slice(0, 10)}`
+              )
+            : null
+        )
+      )
+    );
+  }
+
+  // ── 弹出详情弹框组件 (单模型看板 Popover Modal) ───────────────────────────
   function QuotaPopover({ data, loading, error, activeEngine, onClose }) {
     function resolveInitialTab(engine) {
+      if (engine === "codebuddy") return "codebuddy";
       if (engine === "codex") return "codex";
       if (engine === "omp" || engine === "agy" || engine === "gemini") return "gemini";
-      return "all";
+      if (data && data.codebuddy && !data.codebuddy.error) return "codebuddy";
+      if (data && data.gemini && !data.gemini.error) return "gemini";
+      if (data && data.codex && !data.codex.error) return "codex";
+      return "gemini";
     }
 
     const [activeTab, setActiveTab] = useState(() => resolveInitialTab(activeEngine));
@@ -643,6 +912,7 @@ export default function activate(ctx) {
 
     const gemini = data && data.gemini;
     const codex = data && data.codex;
+    const codebuddy = data && data.codebuddy;
 
     return h(
       "div",
@@ -677,13 +947,19 @@ export default function activate(ctx) {
           h(
             "div",
             { style: { display: "flex", alignItems: "center", gap: "6px" } },
-            activeTab === "codex"
-              ? h(OpenAiIcon, { size: 14, style: { color: "var(--color-text-primary, #18181b)" } })
-              : h(GeminiIcon, { size: 14 }),
+            activeTab === "codebuddy"
+              ? h(CodeBuddyIcon, { size: 14 })
+              : activeTab === "codex"
+                ? h(OpenAiIcon, { size: 14, style: { color: "var(--color-text-primary, #18181b)" } })
+                : h(GeminiIcon, { size: 14 }),
             h(
               "span",
               { style: { fontWeight: 600, fontSize: "13px", color: "var(--color-text-primary, #18181b)" } },
-              activeTab === "codex" ? "Codex 配额看板" : activeTab === "gemini" ? "Gemini 配额看板" : "AI 配额看板"
+              activeTab === "codebuddy"
+                ? "CodeBuddy 积分看板"
+                : activeTab === "codex"
+                  ? "Codex 配额看板"
+                  : "Gemini 配额看板"
             )
           ),
           h(
@@ -694,7 +970,7 @@ export default function activate(ctx) {
               {
                 type: "button",
                 className: "gqc-icon-button",
-                title: "立即刷新全部配额",
+                title: "立即刷新全部配额与积分",
                 disabled: loading,
                 onClick: () => fetchQuota(true),
               },
@@ -713,7 +989,7 @@ export default function activate(ctx) {
           )
         ),
 
-        // 模型筛选切换 Tab
+        // 模型筛选切换 Tab（仅保留单模型看板）
         h(
           "div",
           {
@@ -725,16 +1001,6 @@ export default function activate(ctx) {
               borderRadius: "6px",
             },
           },
-          h(
-            "button",
-            {
-              type: "button",
-              className: `gqc-tab-btn${activeTab === "all" ? " is-active" : ""}`,
-              style: { flex: 1 },
-              onClick: () => setActiveTab("all"),
-            },
-            "全部看板"
-          ),
           h(
             "button",
             {
@@ -756,6 +1022,17 @@ export default function activate(ctx) {
             },
             h(OpenAiIcon, { size: 12, style: { color: "currentColor" } }),
             "Codex"
+          ),
+          h(
+            "button",
+            {
+              type: "button",
+              className: `gqc-tab-btn${activeTab === "codebuddy" ? " is-active" : ""}`,
+              style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
+              onClick: () => setActiveTab("codebuddy"),
+            },
+            h(CodeBuddyIcon, { size: 12 }),
+            "CodeBuddy"
           )
         ),
 
@@ -810,25 +1087,15 @@ export default function activate(ctx) {
             : h("span", { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "10px" } }, `每 ${config.autoRefreshMinutes || 30}m 自动刷新`)
         ),
 
-        // Gemini 区域
-        activeTab === "all" || activeTab === "gemini"
+        // 单个看板视图（独立展示，不再叠放全部）
+        activeTab === "gemini"
           ? renderModelCards("Gemini (Antigravity)", GeminiIcon, gemini, config)
           : null,
-
-        // 分割线（仅在全部且两模型都存在时展示）
-        activeTab === "all" && gemini && codex
-          ? h("div", {
-              style: {
-                height: "1px",
-                background: "var(--color-separator-border, rgba(128, 128, 128, 0.15))",
-                margin: "2px 0",
-              },
-            })
-          : null,
-
-        // Codex 区域
-        activeTab === "all" || activeTab === "codex"
+        activeTab === "codex"
           ? renderModelCards("Codex (ChatGPT)", OpenAiIcon, codex, config)
+          : null,
+        activeTab === "codebuddy"
+          ? renderCodeBuddyCards("CodeBuddy", CodeBuddyIcon, codebuddy, config)
           : null,
 
         // 底部机制小贴士
@@ -843,7 +1110,11 @@ export default function activate(ctx) {
               paddingTop: "6px",
             },
           },
-          "💡 双模型均采用 5H 短周期平滑突发，7D 周限控制总额度。"
+          activeTab === "codebuddy"
+            ? "💡 CodeBuddy 积分按月周期结算，各模型消耗不同，由任务与上下文复杂度决定。"
+            : activeTab === "codex"
+              ? "💡 包含 5 小时短周期与周限，高级套餐支持月度额度券重置。"
+              : "💡 采用 5H 短周期平滑突发，7D 周限控制总额度。"
         )
       )
     );
@@ -876,22 +1147,31 @@ export default function activate(ctx) {
     // 智能决策当前应该聚焦哪个模型
     let target = mode;
     if (mode === "auto") {
-      if (activeEngine === "codex") {
+      if (activeEngine === "codebuddy") {
+        target = "codebuddy";
+      } else if (activeEngine === "codex") {
         target = "codex";
       } else if (activeEngine === "omp" || activeEngine === "agy" || activeEngine === "gemini") {
         target = "gemini";
       } else {
-        target = gW && cW ? "dual" : gW ? "gemini" : cW ? "codex" : "dual";
+        target = "overview";
       }
     }
 
+    const codebuddy = data && data.codebuddy;
+    const cb = codebuddy;
+
     // 计算当前显示目标的警示色
-    const refreshedModel = target === "gemini" ? gemini : target === "codex" ? codex : null;
+    const refreshedModel = target === "gemini" ? gemini : target === "codex" ? codex : target === "codebuddy" ? codebuddy : null;
     const refreshTimestamp = refreshedModel ? refreshedModel.fetchedAt : data && data.fetchedAt;
     const refreshTip = refreshTimestamp ? `\n刷新时间: ${formatRefreshTime(refreshTimestamp)}` : "";
     let tone = "safe";
-    let titleTip = `点击展开详细配额与周限看板${refreshTip}`;
-    if (target === "gemini" && gW) {
+    let titleTip = `点击展开详细配额与积分看板${refreshTip}`;
+    if (target === "codebuddy" && cb && !cb.error) {
+      tone = cb.limitNum === -1 ? "safe" : getStatusTone(cb.remainingPercent, config && config.warningThreshold);
+      const limitText = cb.limitNum === -1 ? "不限额" : `${cb.limitNum} 积分`;
+      titleTip = `CodeBuddy (当前会话) · 剩余: ${cb.left !== null ? cb.left : "不限"} / ${limitText} (${cb.remainingPercent}%)${refreshTip} · 点击展开看板`;
+    } else if (target === "gemini" && gW) {
       const minRem = g5 ? Math.min(gW.remaining, g5.remaining) : gW.remaining;
       tone = getStatusTone(minRem, config && config.warningThreshold);
       titleTip = `Gemini (当前会话) · 7D: ${gW.remaining}% | 5H: ${g5 ? g5.remaining : "--"}%${refreshTip} · 点击展开看板`;
@@ -905,6 +1185,7 @@ export default function activate(ctx) {
         g5 && g5.remaining,
         cW && cW.remaining,
         c5 && c5.remaining,
+        cb && !cb.error && typeof cb.remainingPercent === "number" ? cb.remainingPercent : null,
       ].filter((v) => typeof v === "number");
       const minRem = validRems.length > 0 ? Math.min(...validRems) : 100;
       tone = getStatusTone(minRem, config && config.warningThreshold);
@@ -916,13 +1197,25 @@ export default function activate(ctx) {
         ? Boolean(gemini && gemini.refreshError)
         : target === "codex"
           ? Boolean(codex && codex.refreshError)
-          : Boolean((gemini && gemini.refreshError) || (codex && codex.refreshError));
+          : target === "codebuddy"
+            ? Boolean(codebuddy && codebuddy.refreshError)
+            : Boolean((gemini && gemini.refreshError) || (codex && codex.refreshError) || (codebuddy && codebuddy.refreshError));
     if (showingStaleData) titleTip += " · 查询失败，显示上次成功数据";
 
     const children = [];
 
     if (loading && !data) {
       children.push(h("span", { key: "loading", style: { color: "var(--color-text-tertiary, #a1a1aa)" } }, "加载中…"));
+    } else if (target === "codebuddy" && cb && !cb.error) {
+      children.push(
+        h(
+          "span",
+          { key: "cb-grp", className: "gqc-chip-group" },
+          h(CodeBuddyIcon, { size: 12, style: { marginRight: "2px" } }),
+          h("span", { className: "gqc-chip-label" }, "积分"),
+          h("span", { className: "gqc-chip-val" }, cb.limitNum === -1 ? "不限" : `${cb.remainingPercent}%`)
+        )
+      );
     } else if (target === "gemini" && gW) {
       // 智能聚焦 Gemini：官方 Gemini 彩色星标 + 7D + 5H
       children.push(
@@ -952,36 +1245,37 @@ export default function activate(ctx) {
         )
       );
     } else {
-      // 双模型合并展示（无会话或手动设为 all / weekly_only）
+      // 多模型概览展示
+      let hasPrior = false;
       if (gW) {
         const gItems = [
           h(GeminiIcon, { key: "g-ico", size: 11, style: { marginRight: "1.5px" } }),
           h("span", { key: "g-7d-l", className: "gqc-chip-label" }, "7D"),
           h("span", { key: "g-7d-v", className: "gqc-chip-val" }, `${gW.remaining}%`),
         ];
-        if (target === "all" && g5) {
-          gItems.push(h("span", { key: "g-5h-l", className: "gqc-chip-label", style: { marginLeft: "1px" } }, "5H"));
-          gItems.push(h("span", { key: "g-5h-v", className: "gqc-chip-val" }, `${g5.remaining}%`));
-        }
         children.push(h("span", { key: "g-grp", className: "gqc-chip-group" }, ...gItems));
-      }
-      if (gW && cW) {
-        children.push(h("span", { key: "sep", className: "gqc-chip-sep" }));
+        hasPrior = true;
       }
       if (cW) {
+        if (hasPrior) children.push(h("span", { key: "sep-c", className: "gqc-chip-sep" }));
         const cItems = [
           h(OpenAiIcon, { key: "c-ico", size: 11, style: { marginRight: "1.5px", color: "var(--color-text-primary, #18181b)" } }),
           h("span", { key: "c-7d-l", className: "gqc-chip-label" }, "7D"),
           h("span", { key: "c-7d-v", className: "gqc-chip-val" }, `${cW.remaining}%`),
         ];
-        if (target === "all" && c5) {
-          cItems.push(h("span", { key: "c-5h-l", className: "gqc-chip-label", style: { marginLeft: "1px" } }, "5H"));
-          cItems.push(h("span", { key: "c-5h-v", className: "gqc-chip-val" }, `${c5.remaining}%`));
-        }
         children.push(h("span", { key: "c-grp", className: "gqc-chip-group" }, ...cItems));
+        hasPrior = true;
+      }
+      if (cb && !cb.error) {
+        if (hasPrior) children.push(h("span", { key: "sep-cb", className: "gqc-chip-sep" }));
+        const cbItems = [
+          h(CodeBuddyIcon, { key: "cb-ico", size: 11, style: { marginRight: "1.5px" } }),
+          h("span", { key: "cb-l", className: "gqc-chip-label" }, "积分"),
+          h("span", { key: "cb-v", className: "gqc-chip-val" }, cb.limitNum === -1 ? "不限" : `${cb.remainingPercent}%`),
+        ];
+        children.push(h("span", { key: "cb-grp", className: "gqc-chip-group" }, ...cbItems));
       }
     }
-
     if (loading) {
       children.push(h(RefreshIcon, { key: "spin", spinning: true, size: 11 }));
     }
@@ -1022,8 +1316,8 @@ export default function activate(ctx) {
 
   ctx.ui.registerCommand({
     key: "ai-quota:refresh",
-    title: () => "AI 配额: 刷新用量",
-    keywords: () => ["gemini", "codex", "chatgpt", "quota", "周限", "额度", "用量"],
+    title: () => "AI 配额: 刷新用量与积分",
+    keywords: () => ["gemini", "codex", "codebuddy", "chatgpt", "quota", "credits", "积分", "周限", "额度", "用量"],
     run: () => {
       void fetchQuota(true);
     },
