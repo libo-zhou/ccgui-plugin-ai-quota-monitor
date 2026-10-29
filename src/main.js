@@ -542,7 +542,8 @@ export default function activate(ctx) {
     const runnerCode =
       'const fs=require("fs"),path=require("path"),os=require("os");' +
       'const h=os.homedir();' +
-      'const p=[path.join(h,".ccgui-next","plugins","ai-quota-monitor","scripts","usage-scanner.cjs"),' +
+      'const p=[path.join(h,".ccgui-next","plugins","ai-quota-monitor","usage-scanner.cjs"),' +
+      'path.join(h,".ccgui-next","plugins","ai-quota-monitor","scripts","usage-scanner.cjs"),' +
       'path.join(h,"ccgui-plugins","ai-quota-monitor","scripts","usage-scanner.cjs")];' +
       'const t=p.find(x=>fs.existsSync(x));' +
       'if(t){const mod=require(t);if(typeof mod.runScan==="function"){Promise.resolve(mod.runScan()).then(res=>process.stdout.write(JSON.stringify(res))).catch(err=>process.stdout.write(JSON.stringify({error:err.message})));}}' +

@@ -11,6 +11,7 @@ await copyFile(resolve(root, "src/main.js"), resolve(root, "main.js"));
 await copyFile(resolve(root, "src/main.js"), resolve(output, "main.js"));
 await copyFile(resolve(root, "manifest.json"), resolve(output, "manifest.json"));
 await copyFile(resolve(root, "styles.css"), resolve(output, "styles.css"));
+await copyFile(resolve(root, "scripts/usage-scanner.cjs"), resolve(output, "usage-scanner.cjs"));
 await mkdir(resolve(output, "scripts"), { recursive: true });
 await copyFile(resolve(root, "scripts/usage-scanner.cjs"), resolve(output, "scripts/usage-scanner.cjs"));
 
