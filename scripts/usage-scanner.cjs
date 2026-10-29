@@ -10,6 +10,12 @@ const os = require("os");
 
 const home = os.homedir();
 
+function normalizeModelName(m) {
+  const name = String(m || "unknown").trim();
+  const slash = name.lastIndexOf("/");
+  return slash >= 0 ? name.slice(slash + 1).trim() : name;
+}
+
 function formatTokens(tok) {
   const n = Number(tok || 0);
   if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
@@ -85,10 +91,10 @@ async function scanTokenTrackerBuckets() {
               const st = fs.statSync(full);
               if (st.mtimeMs >= sinceTime) {
                 const lines = fs.readFileSync(full, "utf8").split("\n").filter(Boolean);
-                let model = "google-antigravity/gemini-3.8-flash";
+                let model = "gemini-3.8-flash";
                 for (const line of lines) {
                   if (line.includes("model_change")) {
-                    try { const mc = JSON.parse(line); if (mc.model) model = mc.model; } catch (_) {}
+                    try { const mc = JSON.parse(line); if (mc.model) model = normalizeModelName(mc.model); } catch (_) {}
                   }
                   if (line.includes("usage")) {
                     try {
@@ -145,7 +151,7 @@ async function scanTokenTrackerBuckets() {
                 let prevCache = 0;
                 for (const line of lines) {
                   if (line.includes("turn_context")) {
-                    try { const tc = JSON.parse(line); if (tc.payload?.model) model = tc.payload.model; } catch (_) {}
+                    try { const tc = JSON.parse(line); if (tc.payload?.model) model = normalizeModelName(tc.payload.model); } catch (_) {}
                   }
                   if (line.includes("token_count")) {
                     try {
@@ -201,7 +207,8 @@ async function scanTokenTrackerBuckets() {
       const pMap = {}, mMap = {};
 
       for (const [key, b] of Object.entries(mergedBuckets)) {
-        const [provider, model, ts] = key.split("|");
+        const [provider, rawModel, ts] = key.split("|");
+        const model = normalizeModelName(rawModel);
         if (!startIso || ts >= startIso) {
           const t = b.totals || {};
           const tok = t.total_tokens || 0;
@@ -301,7 +308,8 @@ async function scanTokenTrackerBuckets() {
 
     const heatmap = {};
     for (const [key, b] of Object.entries(mergedBuckets)) {
-      const [provider, model, ts] = key.split("|");
+      const [provider, rawModel, ts] = key.split("|");
+      const model = normalizeModelName(rawModel);
       const dayStr = ts.slice(0, 10);
       if (!heatmap[dayStr]) heatmap[dayStr] = { tokens: 0, cost: 0 };
       const tok = b.totals?.total_tokens || 0;
@@ -378,7 +386,7 @@ function scanFallback() {
           allEntries.push({
             ts: Number(r.ts),
             engine: (r.engine || "other").toLowerCase(),
-            model: r.model || "unknown",
+            model: normalizeModelName(r.model),
             input: inp,
             output: out,
             cache: cache,
