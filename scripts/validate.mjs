@@ -22,6 +22,7 @@ const readme = await read("README.md");
 const license = await read("LICENSE");
 const releaseWorkflow = await read(".github/workflows/release.yml");
 const screenshot = await read("docs/codex-quota.png");
+const usageScreenshot = await read("docs/usage-stats.png");
 let manifest;
 
 try {
@@ -75,6 +76,10 @@ if (styles && /@import\b|url\(\s*['"]?https?:\/\//i.test(styles.toString("utf8")
 if (screenshot) {
   const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   if (!screenshot.subarray(0, 8).equals(pngSignature)) errors.push("docs/codex-quota.png 不是有效 PNG");
+}
+if (usageScreenshot) {
+  const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (!usageScreenshot.subarray(0, 8).equals(pngSignature)) errors.push("docs/usage-stats.png 不是有效 PNG");
 }
 if (readme && !readme.toString("utf8").includes("![Codex 配额详情](docs/codex-quota.png)")) {
   errors.push("README.md 未引用用户指定的截图");

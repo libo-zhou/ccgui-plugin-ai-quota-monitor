@@ -9,6 +9,7 @@ export default function activate(ctx) {
   // ── 内部状态与订阅 ──────────────────────────────────────────────────────────
   let cachedData = null;
   let isFetching = false;
+  let isFetchingUsage = false;
   let fetchError = null;
   let autoTimer = null;
   let activeEngine = null;
@@ -20,6 +21,7 @@ export default function activate(ctx) {
         sub({
           data: cachedData,
           loading: isFetching,
+          usageLoading: isFetchingUsage,
           error: fetchError,
           activeEngine,
         });
@@ -240,6 +242,149 @@ export default function activate(ctx) {
     );
   }
 
+  function OmpIcon({ size = 12, className, style }) {
+    return h(
+      "svg",
+      {
+        width: size,
+        height: size,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2.2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        className,
+        style: Object.assign({ flexShrink: 0, display: "inline-block", verticalAlign: "middle", color: "#3b82f6" }, style),
+      },
+      h("polyline", { points: "4 17 10 11 4 5" }),
+      h("line", { x1: 12, y1: 19, x2: 20, y2: 19 })
+    );
+  }
+
+  function ClaudeIcon({ size = 12, className, style }) {
+    return h(
+      "svg",
+      {
+        width: size,
+        height: size,
+        viewBox: "0 0 24 24",
+        fill: "currentColor",
+        className,
+        style: Object.assign({ flexShrink: 0, display: "inline-block", verticalAlign: "middle", color: "#d97706" }, style),
+      },
+      h("path", {
+        d: "M13.5 2h-3l-.7 4.8-4.2-2.5-1.5 2.6 4.3 2.5-4.3 2.5 1.5 2.6 4.2-2.5.7 4.8h3l.7-4.8 4.2 2.5 1.5-2.6-4.3-2.5 4.3-2.5-1.5-2.6-4.2 2.5-.7-4.8z",
+      })
+    );
+  }
+
+  function ChevronDownIcon({ size = 12, className, style }) {
+    return h(
+      "svg",
+      {
+        width: size,
+        height: size,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2.2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        className,
+        style: Object.assign({ flexShrink: 0 }, style),
+      },
+      h("polyline", { points: "6 9 12 15 18 9" })
+    );
+  }
+
+  function StatsIcon({ size = 13, className, style }) {
+    return h(
+      "svg",
+      {
+        width: size,
+        height: size,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        className,
+        style: Object.assign({ flexShrink: 0 }, style),
+      },
+      h("line", { x1: 18, y1: 20, x2: 18, y2: 10 }),
+      h("line", { x1: 12, y1: 20, x2: 12, y2: 4 }),
+      h("line", { x1: 6, y1: 20, x2: 6, y2: 14 })
+    );
+  }
+
+  function QuotaIcon({ size = 13, className, style }) {
+    return h(
+      "svg",
+      {
+        width: size,
+        height: size,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        className,
+        style: Object.assign({ flexShrink: 0 }, style),
+      },
+      h("path", { d: "M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" })
+    );
+  }
+
+  function formatTokensShort(num) {
+    const n = Number(num || 0);
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+    return String(Math.round(n));
+  }
+
+  function formatCostDisplay(cost) {
+    const c = Number(cost || 0);
+    if (c >= 100) return "$" + c.toFixed(1);
+    if (c >= 1) return "$" + c.toFixed(2);
+    if (c > 0) return "$" + c.toFixed(3);
+    return "$0.00";
+  }
+
+  function getProviderColor(name) {
+    const n = String(name || "").toUpperCase();
+    if (n === "CODEX" || n === "OPENAI") return "#3b82f6";
+    if (n === "OMP" || n === "OH-MY-PI") return "#06b6d4";
+    if (n === "CODEBUDDY") return "#8b5cf6";
+    if (n === "WORKBUDDY") return "#ec4899";
+    if (n === "CLAUDE" || n === "ANTHROPIC") return "#f59e0b";
+    if (n === "GEMINI" || n === "AGY") return "#10b981";
+    return "#6366f1";
+  }
+
+  function renderProviderIcon(name, size = 12) {
+    const n = String(name || "").toUpperCase();
+    if (n === "全部" || n === "ALL") {
+      return h(
+        "svg",
+        { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, style: { flexShrink: 0, color: "#e4e4e7" } },
+        h("polygon", { points: "12 2 2 7 12 12 22 7 12 2" }),
+        h("polyline", { points: "2 17 12 22 22 17" }),
+        h("polyline", { points: "2 12 12 17 22 12" })
+      );
+    }
+    if (n === "CODEX" || n === "OPENAI") return h(OpenAiIcon, { size, style: { color: "#3b82f6" } });
+    if (n === "OMP" || n === "OH-MY-PI") return h(OmpIcon, { size, style: { color: "#06b6d4" } });
+    if (n === "CODEBUDDY") return h(CodeBuddyIcon, { size });
+    if (n === "WORKBUDDY") return h(CodeBuddyIcon, { size, style: { filter: "hue-rotate(60deg)" } });
+    if (n === "CLAUDE" || n === "ANTHROPIC") return h(ClaudeIcon, { size, style: { color: "#f59e0b" } });
+    if (n === "GEMINI" || n === "AGY") return h(GeminiIcon, { size });
+    return h("span", { style: { fontWeight: 700, fontSize: "11px", color: "#8b5cf6" } }, "●");
+  }
+
   // ── Gemini (Antigravity) 抓取与解析 ──────────────────────────────────────────
   async function fetchGeminiQuota() {
     try {
@@ -392,6 +537,38 @@ export default function activate(ctx) {
     }
   }
 
+  // ── 本地多源 Token 与消耗统计扫描器 ──────────────────────────────────────────
+  async function fetchLocalUsageStats() {
+    const runnerCode =
+      'const fs=require("fs"),path=require("path"),os=require("os");' +
+      'const h=os.homedir();' +
+      'const p=[path.join(h,".ccgui-next","plugins","ai-quota-monitor","scripts","usage-scanner.cjs"),' +
+      'path.join(h,"ccgui-plugins","ai-quota-monitor","scripts","usage-scanner.cjs")];' +
+      'const t=p.find(x=>fs.existsSync(x));' +
+      'if(t){const mod=require(t);if(typeof mod.runScan==="function"){Promise.resolve(mod.runScan()).then(res=>process.stdout.write(JSON.stringify(res))).catch(err=>process.stdout.write(JSON.stringify({error:err.message})));}}' +
+      'else{process.stdout.write(JSON.stringify({error:"Scanner not found"}));}';
+
+    try {
+      const res = await ctx.bridge.invoke("plugin_exec_run", {
+        bin: "node",
+        args: ["-e", runnerCode],
+        timeoutMs: 30000,
+      });
+      if (res.code !== 0) {
+        console.warn("[ai-quota-monitor] usage scan error:", res.stderr);
+        return null;
+      }
+      const parsed = JSON.parse(res.stdout);
+      if (parsed && !parsed.error) {
+        return parsed;
+      }
+      return null;
+    } catch (e) {
+      console.warn("[ai-quota-monitor] usage scan failed:", e);
+      return null;
+    }
+  }
+
   function preserveQuotaAfterFailure(result, previous) {
     if (result && !result.error) return result;
     if (previous && !previous.error) {
@@ -411,21 +588,24 @@ export default function activate(ctx) {
     notifySubscribers();
 
     try {
-      const [geminiResult, codexResult, codebuddyResult] = await Promise.all([
+      const [geminiResult, codexResult, codebuddyResult, usageStatsResult] = await Promise.all([
         fetchGeminiQuota(),
         fetchCodexQuota(),
         fetchCodeBuddyQuota(),
+        fetchLocalUsageStats(),
       ]);
 
       const hasFreshResult =
         (geminiResult && !geminiResult.error) ||
         (codexResult && !codexResult.error) ||
-        (codebuddyResult && !codebuddyResult.error);
+        (codebuddyResult && !codebuddyResult.error) ||
+        Boolean(usageStatsResult);
       const merged = {
         fetchedAt: hasFreshResult ? Date.now() : cachedData ? cachedData.fetchedAt : null,
         gemini: preserveQuotaAfterFailure(geminiResult, cachedData && cachedData.gemini),
         codex: preserveQuotaAfterFailure(codexResult, cachedData && cachedData.codex),
         codebuddy: preserveQuotaAfterFailure(codebuddyResult, cachedData && cachedData.codebuddy),
+        usageStats: usageStatsResult || (cachedData && cachedData.usageStats) || null,
       };
       cachedData = merged;
       fetchError = null;
@@ -445,11 +625,35 @@ export default function activate(ctx) {
     }
   }
 
+  // ── 单独刷新用量统计 (不调用任何配额接口) ────────────────────────────────────
+  async function fetchUsageOnly() {
+    if (isFetchingUsage) return;
+    isFetchingUsage = true;
+    notifySubscribers();
+
+    try {
+      const usageStatsResult = await fetchLocalUsageStats();
+      if (usageStatsResult && !usageStatsResult.error) {
+        cachedData = {
+          ...(cachedData || {}),
+          usageStats: usageStatsResult,
+        };
+        await ctx.storage.set("cached_quota", cachedData);
+      }
+    } catch (err) {
+      console.warn("[ai-quota-monitor] fetchUsageOnly failed:", err);
+    } finally {
+      isFetchingUsage = false;
+      notifySubscribers();
+    }
+  }
+
   // ── 自定义 Hook 订阅状态 ────────────────────────────────────────────────────
   function useQuotaState() {
     const [state, setState] = useState(() => ({
       data: cachedData,
       loading: isFetching,
+      usageLoading: isFetchingUsage,
       error: fetchError,
       activeEngine,
     }));
@@ -469,16 +673,27 @@ export default function activate(ctx) {
     if (!modelData || modelData.error) {
       return h(
         "div",
-        { className: "gqc-popover-card" },
+        {
+          className: "gqc-popover-card",
+          style: {
+            minHeight: "220px",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            textAlign: "center",
+            gap: "8px",
+          },
+        },
         h(
           "div",
           { style: { display: "flex", alignItems: "center", gap: "6px", fontWeight: 600 } },
-          h(BrandIcon, { size: 14 }),
+          h(BrandIcon, { size: 16 }),
           h("span", null, title)
         ),
         h(
           "div",
-          { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "11px", marginTop: "4px" } },
+          { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "11px", maxWidth: "260px" } },
           modelData && modelData.error ? modelData.error : "暂无配额数据"
         )
       );
@@ -528,7 +743,22 @@ export default function activate(ctx) {
                 },
                 modelData.planType
               )
-            : null
+            : title.includes("Gemini")
+              ? h(
+                  "span",
+                  {
+                    style: {
+                      padding: "1px 4px",
+                      borderRadius: "3px",
+                      fontSize: "9.5px",
+                      fontWeight: 600,
+                      background: "rgba(2, 132, 199, 0.12)",
+                      color: "#0284c7",
+                    },
+                  },
+                  "Antigravity"
+                )
+              : null
         ),
         h(
           "span",
@@ -661,27 +891,34 @@ export default function activate(ctx) {
         )
       ),
 
-      // 额度券提示
-      modelData.resetCredits !== undefined && modelData.resetCredits > 0
+      // 额度券或扩展能力辅助提示条 (统一各看板高度与结构节奏)
+      modelData.resetCredits !== undefined
         ? h(
             "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "6px 10px",
-                borderRadius: "6px",
-                background: "rgba(16, 185, 129, 0.08)",
-                border: "1px solid rgba(16, 185, 129, 0.2)",
-                fontSize: "11px",
-                color: "#059669",
-              },
-            },
-            h("span", null, "🎟️ 月度额度重置券:"),
+            { className: "gqc-aux-strip is-codex" },
+            h("span", { className: "gqc-aux-label" }, "🎟️ 月度额度重置券:"),
             h("b", null, `${modelData.resetCredits} 次可用`)
           )
-        : null
+        : modelData.p3Weekly
+          ? h(
+              "div",
+              { className: "gqc-aux-strip is-gemini" },
+              h("span", { className: "gqc-aux-label" }, "🤖 第三方模型周限 (Claude/GPT):"),
+              h("b", null, `${modelData.p3Weekly.remaining}% 可用`)
+            )
+          : modelData.projectId
+            ? h(
+                "div",
+                { className: "gqc-aux-strip is-gemini" },
+                h("span", { className: "gqc-aux-label" }, "🏢 关联云项目 (Project):"),
+                h("b", null, modelData.projectId)
+              )
+            : h(
+                "div",
+                { className: "gqc-aux-strip is-default" },
+                h("span", { className: "gqc-aux-label" }, "⚡ 配额调度机制:"),
+                h("b", null, "5H 平滑突发 · 7D 周限保护")
+              )
     );
   }
 
@@ -690,16 +927,27 @@ export default function activate(ctx) {
     if (!modelData || modelData.error) {
       return h(
         "div",
-        { className: "gqc-popover-card" },
+        {
+          className: "gqc-popover-card",
+          style: {
+            minHeight: "220px",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            textAlign: "center",
+            gap: "8px",
+          },
+        },
         h(
           "div",
           { style: { display: "flex", alignItems: "center", gap: "6px", fontWeight: 600 } },
-          h(BrandIcon, { size: 14 }),
+          h(BrandIcon, { size: 16 }),
           h("span", null, title)
         ),
         h(
           "div",
-          { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "11px", marginTop: "4px" } },
+          { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "11px", maxWidth: "260px" } },
           modelData && modelData.error ? modelData.error : "暂无 CodeBuddy 积分数据"
         )
       );
@@ -727,6 +975,18 @@ export default function activate(ctx) {
       modelData.userName,
       modelData.enterpriseName,
     ].filter(Boolean).join(" · ");
+
+    let cycleProgressPct = 0;
+    if (modelData.cycleStartTime && modelData.cycleEndTime) {
+      try {
+        const s = new Date(modelData.cycleStartTime.replace(/-/g, "/")).getTime();
+        const e = new Date(modelData.cycleEndTime.replace(/-/g, "/")).getTime();
+        const n = Date.now();
+        if (e > s) {
+          cycleProgressPct = Math.max(0, Math.min(100, Math.round(((n - s) / (e - s)) * 100)));
+        }
+      } catch (_) {}
+    }
 
     return h(
       "div",
@@ -794,7 +1054,7 @@ export default function activate(ctx) {
           )
         : null,
 
-      // 月度积分余额卡片
+      // 1. 月度可用积分卡片 (结构与每周总限额卡片严格对齐)
       h(
         "div",
         { className: "gqc-popover-card" },
@@ -804,7 +1064,7 @@ export default function activate(ctx) {
           h(
             "span",
             { style: { fontWeight: 600, fontSize: "11.5px", color: "var(--color-text-primary, #18181b)" } },
-            "本月积分余额 (Monthly)"
+            "本月可用积分 (Monthly)"
           ),
           h(
             "span",
@@ -857,30 +1117,480 @@ export default function activate(ctx) {
             null,
             "已用占比: ",
             h("b", { style: { color: "var(--color-text-primary, #18181b)" } }, `${modelData.usedPercent}%`)
-          ),
-          modelData.resetsAt
-            ? h(
-                "div",
-                { style: { gridColumn: "1 / -1" } },
-                "重置倒计时: ",
-                h("b", { style: { color: "var(--color-text-primary, #18181b)" } }, formatResetTime(modelData.resetsAt)),
-                ` (${formatExactDate(modelData.resetsAt)})`
-              )
-            : null,
-          modelData.cycleStartTime && modelData.cycleEndTime
-            ? h(
-                "div",
-                { style: { gridColumn: "1 / -1", fontSize: "10px", color: "var(--color-text-tertiary, #a1a1aa)" } },
-                `周期: ${modelData.cycleStartTime.slice(0, 10)} ~ ${modelData.cycleEndTime.slice(0, 10)}`
-              )
-            : null
+          )
         )
+      ),
+
+      // 2. 结算周期与重置卡片 (结构与 5H 短周期卡片严格对齐)
+      h(
+        "div",
+        { className: "gqc-popover-card" },
+        h(
+          "div",
+          { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" } },
+          h(
+            "span",
+            { style: { fontWeight: 600, fontSize: "11.5px", color: "var(--color-text-primary, #18181b)" } },
+            "结算周期与重置 (Cycle)"
+          ),
+          h(
+            "span",
+            { style: { fontSize: "13px", fontWeight: 700, color: "#2ea99d" } },
+            modelData.resetsAt ? formatResetTime(modelData.resetsAt) : "月度结算"
+          )
+        ),
+        h(
+          "div",
+          { className: "gqc-progress-track" },
+          h("div", {
+            className: "gqc-progress-bar",
+            style: {
+              width: `${cycleProgressPct || 100}%`,
+              backgroundColor: "#2ea99d",
+            },
+          })
+        ),
+        h(
+          "div",
+          {
+            style: {
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: "11px",
+              color: "var(--color-text-secondary, #71717a)",
+            },
+          },
+          h(
+            "span",
+            null,
+            "周期: ",
+            h(
+              "b",
+              { style: { color: "var(--color-text-primary, #18181b)" } },
+              modelData.cycleStartTime && modelData.cycleEndTime
+                ? `${modelData.cycleStartTime.slice(5, 10)} ~ ${modelData.cycleEndTime.slice(5, 10)}`
+                : "自然月"
+            )
+          ),
+          h(
+            "span",
+            null,
+            "重置时间: ",
+            h(
+              "b",
+              { style: { color: "var(--color-text-primary, #18181b)" } },
+              modelData.resetsAt ? formatExactDate(modelData.resetsAt) : "--"
+            )
+          )
+        )
+      ),
+
+      // 3. 账号权益状态条 (结构与月度重置券条严格对齐)
+      h(
+        "div",
+        { className: "gqc-aux-strip is-codebuddy" },
+        h("span", { className: "gqc-aux-label" }, "🎫 账号权益:"),
+        h("b", null, `${typeLabel} · 专享高并发与优先通道`)
       )
     );
   }
 
+  // ── GitHub 风格日历用量热力图组件 ──────────────────────────────────────────
+  function renderCalendarHeatmap(heatmapData) {
+    const rawData = heatmapData || {};
+    const now = new Date();
+    const numWeeks = 24; // 近 6 个月 (24 周)
+    const startDate = new Date(now);
+    startDate.setDate(now.getDate() - (numWeeks * 7) - now.getDay());
+
+    const weeks = [];
+    let currWeek = [];
+    let activeDaysCount = 0;
+    let maxTokens = 0;
+
+    for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
+      const dayOfWeek = d.getDay();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const dateStr = `${y}-${m}-${day}`;
+      const entry = rawData[dateStr];
+      const tok = entry ? Number(entry.tokens || 0) : 0;
+      const cost = entry ? Number(entry.cost || 0) : 0;
+      if (tok > 0) activeDaysCount++;
+      if (tok > maxTokens) maxTokens = tok;
+      currWeek.push({
+        dateStr,
+        dayOfWeek,
+        month: d.getMonth() + 1,
+        dayNum: d.getDate(),
+        tok,
+        cost,
+      });
+      if (dayOfWeek === 6 || d.getTime() >= now.getTime()) {
+        weeks.push(currWeek);
+        currWeek = [];
+      }
+    }
+    if (currWeek.length > 0) weeks.push(currWeek);
+
+    function getLevel(tok) {
+      if (!tok || tok === 0) return 0;
+      if (tok < 10e6) return 1;
+      if (tok < 50e6) return 2;
+      if (tok < 150e6) return 3;
+      return 4;
+    }
+
+    // 构建月份标尺
+    const monthLabels = [];
+    let lastMonth = null;
+    for (let w = 0; w < weeks.length; w++) {
+      const firstDay = weeks[w][0];
+      if (firstDay && firstDay.month !== lastMonth && firstDay.dayNum <= 7) {
+        monthLabels.push(
+          h(
+            "span",
+            {
+              key: `m-${w}`,
+              style: { position: "absolute", left: `${w * 11.5 + 18}px` },
+            },
+            `${firstDay.month}月`
+          )
+        );
+        lastMonth = firstDay.month;
+      }
+    }
+
+    // 构建 24 周列
+    const columns = weeks.map((week, wIdx) => {
+      const cells = [];
+      for (let r = 0; r < 7; r++) {
+        const day = week.find((d) => d.dayOfWeek === r);
+        if (!day) {
+          cells.push(h("div", { key: `empty-${r}`, style: { width: "9.5px", height: "9.5px" } }));
+        } else {
+          const lvl = getLevel(day.tok);
+          const tooltip = day.tok > 0
+            ? `${day.dateStr}: ${formatTokensShort(day.tok)} Token (${formatCostDisplay(day.cost)})`
+            : `${day.dateStr}: 无记录`;
+          cells.push(
+            h("div", {
+              key: day.dateStr,
+              className: `gqc-heat-cell lvl-${lvl}`,
+              title: tooltip,
+            })
+          );
+        }
+      }
+      return h("div", { key: `col-${wIdx}`, className: "gqc-heat-col" }, cells);
+    });
+
+    return h(
+      "div",
+      { className: "gqc-heat-wrap" },
+      h(
+        "div",
+        { className: "gqc-heat-header" },
+        h(
+          "div",
+          { className: "gqc-heat-title" },
+          h("span", { style: { fontSize: "11px" } }, "📅"),
+          h("span", null, "用量热力图")
+        ),
+        h("div", { className: "gqc-heat-sub" }, `近半年活跃 ${activeDaysCount} 天`)
+      ),
+      h(
+        "div",
+        { className: "gqc-heat-scroll" },
+        h(
+          "div",
+          { className: "gqc-heat-grid-container" },
+          h("div", { className: "gqc-heat-months-row" }, monthLabels),
+          h(
+            "div",
+            { className: "gqc-heat-body-row" },
+            h(
+              "div",
+              { className: "gqc-heat-day-labels" },
+              h("span", null, "日"),
+              h("span", null, "一"),
+              h("span", null, "二"),
+              h("span", null, "三"),
+              h("span", null, "四"),
+              h("span", null, "五"),
+              h("span", null, "六")
+            ),
+            h("div", { className: "gqc-heat-weeks-flow" }, columns)
+          )
+        )
+      ),
+      h(
+        "div",
+        { className: "gqc-heat-legend-row" },
+        h("span", null, "少"),
+        h("div", { className: "gqc-heat-legend-cell lvl-0" }),
+        h("div", { className: "gqc-heat-legend-cell lvl-1" }),
+        h("div", { className: "gqc-heat-legend-cell lvl-2" }),
+        h("div", { className: "gqc-heat-legend-cell lvl-3" }),
+        h("div", { className: "gqc-heat-legend-cell lvl-4" }),
+        h("span", null, "多")
+      )
+    );
+  }
+
+  // ── 本地全场景 Token 与成本使用统计视图 ───────────────────────────────────
+  // ── 本地全场景 Token 与成本使用统计视图 (与 Image 1 深度对齐) ──────────────────
+  function renderUsageStatsView(
+    usageStats,
+    loading,
+    usageLoading,
+    config,
+    usageRange,
+    setUsageRange,
+    onRefreshUsage,
+    selectedProvider,
+    setSelectedProvider
+  ) {
+    if (!usageStats) {
+      return h(
+        "div",
+        {
+          style: {
+            padding: "36px 16px",
+            textAlign: "center",
+            color: "var(--color-text-secondary, #71717a)",
+            fontSize: "12px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "10px",
+          },
+        },
+        loading
+          ? [h(RefreshIcon, { spinning: true, size: 18 }), "正在扫描 Token 消耗..."]
+          : "暂未发现本地会话用量数据，点击右上角刷新"
+      );
+    }
+
+    const currentRangeData = usageStats[usageRange] || usageStats.today || {
+      totalTokens: 0,
+      totalTokensFormatted: "0",
+      totalCost: 0,
+      totalCostFormatted: "$0.00",
+      totalModels: 0,
+      providers: [],
+      allModels: [],
+    };
+
+    const activeProvider =
+      (currentRangeData.providers && currentRangeData.providers.find((p) => p.name === selectedProvider)) ||
+      (currentRangeData.providers && currentRangeData.providers[0]) || { name: "全部", isAll: true, models: currentRangeData.allModels };
+
+    const isFiltered = activeProvider && !activeProvider.isAll;
+    const displayModels = (activeProvider && activeProvider.models && activeProvider.models.length > 0)
+      ? activeProvider.models
+      : currentRangeData.allModels;
+
+    const onCardClick = (pName) => {
+      if (setSelectedProvider) {
+        setSelectedProvider((prev) => (prev === pName && pName !== "全部" ? "全部" : pName));
+      }
+    };
+
+    const rangeLabels = [
+      { id: "today", label: "日" },
+      { id: "week", label: "周" },
+      { id: "month", label: "月" },
+      { id: "all", label: "总计" },
+    ];
+
+    return h(
+      "div",
+      { className: "gqc-stat-container" },
+
+      // 时间筛选胶囊 + 右侧独立刷新按钮
+      h(
+        "div",
+        { className: "gqc-stat-filter-bar" },
+        h(
+          "div",
+          { className: "gqc-stat-pills" },
+          rangeLabels.map(({ id, label }) =>
+            h(
+              "button",
+              {
+                key: id,
+                type: "button",
+                className: `gqc-stat-pill-btn${usageRange === id ? " is-active" : ""}`,
+                onClick: () => setUsageRange(id),
+              },
+              label
+            )
+          )
+        ),
+        h(
+          "button",
+          {
+            type: "button",
+            className: "gqc-stat-refresh-btn",
+            title: "仅刷新用量统计 (不刷新配额)",
+            disabled: usageLoading,
+            onClick: onRefreshUsage,
+          },
+          h(RefreshIcon, { spinning: usageLoading, size: 12 })
+        )
+      ),
+
+      // 居中大指标展示 (TOKEN 总数, 106.4M / 1.7B, $13.51 / $251.50)
+      h(
+        "div",
+        { className: "gqc-stat-hero" },
+        h("span", { className: "gqc-stat-hero-label" }, usageRange === "today" ? "TOKEN 总数 (今日)" : "TOKEN 消耗总数"),
+        h("span", { className: "gqc-stat-hero-number" }, currentRangeData.totalTokensFormatted || "0"),
+        h("span", { className: "gqc-stat-hero-cost" }, currentRangeData.totalCostFormatted || "$0.00"),
+        currentRangeData.totalTokens === 0
+          ? h("span", { style: { fontSize: "10.5px", color: "var(--color-text-secondary, #52525b)", marginTop: "4px" } }, "今日暂无消耗 · 点击「周」或「月」查看用量")
+          : null
+      ),
+
+      // 多色分段进度条
+      currentRangeData.providers && currentRangeData.providers.length > 1
+        ? h(
+            "div",
+            { className: "gqc-stat-seg-bar" },
+            currentRangeData.providers
+              .filter((p) => !p.isAll)
+              .map((p) =>
+                h("div", {
+                  key: p.name,
+                  className: "gqc-stat-seg-part",
+                  style: {
+                    width: `${Math.max(1, p.percent)}%`,
+                    backgroundColor: getProviderColor(p.name),
+                  },
+                  title: `${p.name}: ${p.percent}% (${p.tokensFormatted})`,
+                })
+              )
+          )
+        : null,
+
+      // 供应商 2 列卡片网格 (支持点击筛选)
+      h(
+        "div",
+        { className: "gqc-stat-grid" },
+        currentRangeData.providers.map((p) => {
+          const isSelected = selectedProvider === p.name || (p.isAll && (!selectedProvider || selectedProvider === "全部"));
+          return h(
+            "div",
+            {
+              key: p.name,
+              className: `gqc-stat-provider-card${isSelected ? " is-selected" : ""}`,
+              onClick: () => onCardClick(p.name),
+              title: isSelected ? "点击取消筛选，展示全部模型" : `点击筛选查看 ${p.name} 模型用量`,
+            },
+            h(
+              "div",
+              { className: "gqc-stat-provider-head" },
+              h(
+                "div",
+                { className: "gqc-stat-provider-title" },
+                renderProviderIcon(p.name, 11),
+                p.name
+              ),
+              h("div", { className: "gqc-stat-provider-models" }, `${p.modelCount} 模型`)
+            ),
+            h("div", { className: "gqc-stat-provider-pct" }, `${p.percent.toFixed(2)}%`),
+            h("div", { className: "gqc-stat-provider-meta" }, p.tokens > 0 ? `${p.tokensFormatted} · ${p.costFormatted}` : "0 Token · $0.00")
+          );
+        })
+      ),
+
+      // 模型用量排行榜 (跟随卡片点击动态过滤)
+      displayModels && displayModels.length > 0
+        ? h(
+            "div",
+            { className: "gqc-stat-all-models-wrap" },
+            h(
+              "div",
+              {
+                className: "gqc-stat-all-models-title-row",
+                style: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+              },
+              h(
+                "div",
+                { style: { display: "flex", alignItems: "center", gap: "5px" } },
+                renderProviderIcon(isFiltered ? activeProvider.name : "全部", 12),
+                isFiltered
+                  ? `${activeProvider.name} 模型用量 (${activeProvider.modelCount} 模型)`
+                  : "全部模型"
+              ),
+              isFiltered
+                ? h(
+                    "button",
+                    {
+                      type: "button",
+                      style: {
+                        background: "transparent",
+                        border: "none",
+                        color: "#2563eb",
+                        fontSize: "10.5px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        padding: "0 2px",
+                      },
+                      onClick: () => setSelectedProvider && setSelectedProvider("全部"),
+                    },
+                    "显示全部 ✕"
+                  )
+                : null
+            ),
+            h(
+              "div",
+              { className: "gqc-stat-all-models-sub" },
+              isFiltered
+                ? `仅展示 ${activeProvider.name} 产生的消耗 · 点击卡片取消筛选`
+                : "同名模型会跨工具合并，并按总用量排序。"
+            ),
+            h(
+              "div",
+              { className: "gqc-stat-all-models-list" },
+              displayModels.slice(0, 15).map((m) =>
+                h(
+                  "div",
+                  { key: m.name, className: "gqc-stat-all-model-row" },
+                  h(
+                    "div",
+                    { className: "gqc-stat-all-model-info" },
+                    h("span", { className: "gqc-stat-all-model-name", title: m.name }, m.name),
+                    h(
+                      "div",
+                      { className: "gqc-stat-all-model-bar-track" },
+                      h("div", {
+                        className: "gqc-stat-all-model-bar-fill",
+                        style: { width: `${Math.min(100, Math.max(3, m.percent))}%` },
+                      })
+                    )
+                  ),
+                  h(
+                    "div",
+                    { className: "gqc-stat-all-model-nums" },
+                    h("span", { className: "gqc-stat-all-model-tokens" }, m.tokensFormatted),
+                    h("span", { className: "gqc-stat-all-model-cost" }, m.costFormatted),
+                    h("span", { className: "gqc-stat-all-model-pct" }, `${m.percent}%`)
+                  )
+                )
+              )
+            )
+          )
+        : null,
+
+      // 日历活跃热力图 (GitHub 风格，在全部模型列表下方)
+      renderCalendarHeatmap(usageStats.heatmap)
+    );
+  }
   // ── 弹出详情弹框组件 (单模型看板 Popover Modal) ───────────────────────────
-  function QuotaPopover({ data, loading, error, activeEngine, onClose }) {
+  function QuotaPopover({ data, loading, usageLoading, error, activeEngine, onClose }) {
     function resolveInitialTab(engine) {
       if (engine === "codebuddy") return "codebuddy";
       if (engine === "codex") return "codex";
@@ -891,9 +1601,11 @@ export default function activate(ctx) {
       return "gemini";
     }
 
+    const [viewMode, setViewMode] = useState("quota"); // "quota" | "usage"
     const [activeTab, setActiveTab] = useState(() => resolveInitialTab(activeEngine));
+    const [usageRange, setUsageRange] = useState("today"); // 默认展示日的
+    const [selectedProvider, setSelectedProvider] = useState("全部");
     const [config, setConfig] = useState({});
-
     useEffect(() => {
       setActiveTab(resolveInitialTab(activeEngine));
     }, [activeEngine]);
@@ -929,7 +1641,7 @@ export default function activate(ctx) {
       h(
         "div",
         {
-          className: "gqc-popover",
+          className: `gqc-popover ${viewMode === "quota" ? "is-quota" : "is-usage"}`,
           onClick: (e) => e.stopPropagation(),
         },
         // 顶部操作栏
@@ -947,34 +1659,66 @@ export default function activate(ctx) {
           h(
             "div",
             { style: { display: "flex", alignItems: "center", gap: "6px" } },
-            activeTab === "codebuddy"
-              ? h(CodeBuddyIcon, { size: 14 })
-              : activeTab === "codex"
-                ? h(OpenAiIcon, { size: 14, style: { color: "var(--color-text-primary, #18181b)" } })
-                : h(GeminiIcon, { size: 14 }),
+            viewMode === "usage"
+              ? h(StatsIcon, { size: 14, style: { color: "#16a34a" } })
+              : activeTab === "codebuddy"
+                ? h(CodeBuddyIcon, { size: 14 })
+                : activeTab === "codex"
+                  ? h(OpenAiIcon, { size: 14, style: { color: "var(--color-text-primary, #18181b)" } })
+                  : h(GeminiIcon, { size: 14 }),
             h(
               "span",
               { style: { fontWeight: 600, fontSize: "13px", color: "var(--color-text-primary, #18181b)" } },
-              activeTab === "codebuddy"
-                ? "CodeBuddy 积分看板"
-                : activeTab === "codex"
-                  ? "Codex 配额看板"
-                  : "Gemini 配额看板"
+              viewMode === "usage"
+                ? "AI 使用与成本统计"
+                : activeTab === "codebuddy"
+                  ? "CodeBuddy 积分看板"
+                  : activeTab === "codex"
+                    ? "Codex 配额看板"
+                    : "Gemini 配额看板"
             )
           ),
           h(
             "div",
-            { style: { display: "flex", alignItems: "center", gap: "2px" } },
+            { style: { display: "flex", alignItems: "center", gap: "6px" } },
+            h(
+              "div",
+              { className: "gqc-header-switcher" },
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: `gqc-header-switch-btn${viewMode === "quota" ? " is-active" : ""}`,
+                  onClick: () => setViewMode("quota"),
+                },
+                "配额"
+              ),
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: `gqc-header-switch-btn${viewMode === "usage" ? " is-active" : ""}`,
+                  onClick: () => setViewMode("usage"),
+                },
+                "用量"
+              )
+            ),
             h(
               "button",
               {
                 type: "button",
                 className: "gqc-icon-button",
-                title: "立即刷新全部配额与积分",
-                disabled: loading,
-                onClick: () => fetchQuota(true),
+                title: viewMode === "usage" ? "仅刷新用量统计 (不刷新配额)" : "立即刷新全部配额与Token用量",
+                disabled: viewMode === "usage" ? usageLoading : loading,
+                onClick: () => {
+                  if (viewMode === "usage") {
+                    void fetchUsageOnly();
+                  } else {
+                    void fetchQuota(true);
+                  }
+                },
               },
-              h(RefreshIcon, { spinning: loading, size: 13 })
+              h(RefreshIcon, { spinning: viewMode === "usage" ? usageLoading : loading, size: 13 })
             ),
             h(
               "button",
@@ -990,139 +1734,159 @@ export default function activate(ctx) {
         ),
 
         // 模型筛选切换 Tab（仅保留单模型看板）
-        h(
-          "div",
-          {
-            style: {
-              display: "flex",
-              gap: "4px",
-              background: "var(--color-background-secondary-default, rgba(128, 128, 128, 0.06))",
-              padding: "2px",
-              borderRadius: "6px",
-            },
-          },
-          h(
-            "button",
-            {
-              type: "button",
-              className: `gqc-tab-btn${activeTab === "gemini" ? " is-active" : ""}`,
-              style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
-              onClick: () => setActiveTab("gemini"),
-            },
-            h(GeminiIcon, { size: 12 }),
-            "Gemini"
-          ),
-          h(
-            "button",
-            {
-              type: "button",
-              className: `gqc-tab-btn${activeTab === "codex" ? " is-active" : ""}`,
-              style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
-              onClick: () => setActiveTab("codex"),
-            },
-            h(OpenAiIcon, { size: 12, style: { color: "currentColor" } }),
-            "Codex"
-          ),
-          h(
-            "button",
-            {
-              type: "button",
-              className: `gqc-tab-btn${activeTab === "codebuddy" ? " is-active" : ""}`,
-              style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
-              onClick: () => setActiveTab("codebuddy"),
-            },
-            h(CodeBuddyIcon, { size: 12 }),
-            "CodeBuddy"
-          )
-        ),
-
-        // 全局错误提示（如有）
-        error
-          ? h(
-              "div",
-              {
-                style: {
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  background: "rgba(220, 38, 38, 0.08)",
-                  border: "1px solid rgba(220, 38, 38, 0.2)",
-                  color: "#dc2626",
-                  fontSize: "11px",
-                  lineHeight: "1.4",
-                },
-              },
-              error
+        viewMode === "usage"
+          ? renderUsageStatsView(
+              data && data.usageStats,
+              loading,
+              usageLoading,
+              config,
+              usageRange,
+              setUsageRange,
+              () => void fetchUsageOnly(),
+              selectedProvider,
+              setSelectedProvider
             )
-          : null,
+          : h(
+              "div",
+              { key: "quota-view", style: { display: "flex", flexDirection: "column", gap: "10px" } },
+              // 模型筛选切换 Tab（仅保留单模型看板）
+              h(
+                "div",
+                {
+                  style: {
+                    display: "flex",
+                    gap: "4px",
+                    background: "var(--color-background-secondary-default, rgba(128, 128, 128, 0.06))",
+                    padding: "2px",
+                    borderRadius: "6px",
+                  },
+                },
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    className: `gqc-tab-btn${activeTab === "gemini" ? " is-active" : ""}`,
+                    style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
+                    onClick: () => setActiveTab("gemini"),
+                  },
+                  h(GeminiIcon, { size: 12 }),
+                  "Gemini"
+                ),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    className: `gqc-tab-btn${activeTab === "codex" ? " is-active" : ""}`,
+                    style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
+                    onClick: () => setActiveTab("codex"),
+                  },
+                  h(OpenAiIcon, { size: 12, style: { color: "currentColor" } }),
+                  "Codex"
+                ),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    className: `gqc-tab-btn${activeTab === "codebuddy" ? " is-active" : ""}`,
+                    style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
+                    onClick: () => setActiveTab("codebuddy"),
+                  },
+                  h(CodeBuddyIcon, { size: 12 }),
+                  "CodeBuddy"
+                )
+              ),
 
-        // 额度刷新时间提示条
-        h(
-          "div",
-          {
-            style: {
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              fontSize: "11px",
-              color: "var(--color-text-secondary, #71717a)",
-              padding: "4px 8px",
-              borderRadius: "6px",
-              background: "var(--color-background-secondary-default, rgba(128, 128, 128, 0.05))",
-              border: "1px solid var(--color-separator-border, rgba(128, 128, 128, 0.12))",
-            },
-          },
-          h(
-            "span",
-            { style: { display: "inline-flex", alignItems: "center", gap: "4px" } },
-            h("span", { style: { color: "var(--color-text-tertiary, #9ca3af)" } }, "🕒 刷新时间:"),
-            h("b", { style: { color: "var(--color-text-primary, #18181b)", fontWeight: 600 } }, formatRefreshTime(data ? data.fetchedAt : null))
-          ),
-          loading
-            ? h(
-                "span",
-                { style: { color: "#0284c7", display: "inline-flex", alignItems: "center", gap: "3px", fontWeight: 500 } },
-                h(RefreshIcon, { spinning: true, size: 11 }),
-                "刷新中…"
+              // 全局错误提示（如有）
+              error
+                ? h(
+                    "div",
+                    {
+                      style: {
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        background: "rgba(220, 38, 38, 0.08)",
+                        border: "1px solid rgba(220, 38, 38, 0.2)",
+                        color: "#dc2626",
+                        fontSize: "11px",
+                        lineHeight: "1.4",
+                      },
+                    },
+                    error
+                  )
+                : null,
+
+              // 额度刷新时间提示条
+              h(
+                "div",
+                {
+                  style: {
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "11px",
+                    color: "var(--color-text-secondary, #71717a)",
+                    padding: "4px 8px",
+                    borderRadius: "6px",
+                    background: "var(--color-background-secondary-default, rgba(128, 128, 128, 0.05))",
+                    border: "1px solid var(--color-separator-border, rgba(128, 128, 128, 0.12))",
+                  },
+                },
+                h(
+                  "span",
+                  { style: { display: "inline-flex", alignItems: "center", gap: "4px" } },
+                  h("span", { style: { color: "var(--color-text-tertiary, #9ca3af)" } }, "🕒 刷新时间:"),
+                  h("b", { style: { color: "var(--color-text-primary, #18181b)", fontWeight: 600 } }, formatRefreshTime(data ? data.fetchedAt : null))
+                ),
+                loading
+                  ? h(
+                      "span",
+                      { style: { color: "#0284c7", display: "inline-flex", alignItems: "center", gap: "3px", fontWeight: 500 } },
+                      h(RefreshIcon, { spinning: true, size: 11 }),
+                      "刷新中…"
+                    )
+                  : h("span", { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "10px" } }, `每 ${config.autoRefreshMinutes || 30}m 自动刷新`)
+              ),
+
+              // 单个看板视图（独立展示，不再叠放全部）
+              activeTab === "gemini"
+                ? renderModelCards("Gemini (Antigravity)", GeminiIcon, gemini, config)
+                : null,
+              activeTab === "codex"
+                ? renderModelCards("Codex (ChatGPT)", OpenAiIcon, codex, config)
+                : null,
+              activeTab === "codebuddy"
+                ? renderCodeBuddyCards("CodeBuddy", CodeBuddyIcon, codebuddy, config)
+                : null,
+
+              // 底部机制小贴士
+              h(
+                "div",
+                {
+                  style: {
+                    fontSize: "10px",
+                    lineHeight: "1.4",
+                    color: "var(--color-text-tertiary, #a1a1aa)",
+                    borderTop: "1px solid var(--color-separator-border, rgba(128, 128, 128, 0.15))",
+                    paddingTop: "6px",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  },
+                },
+                activeTab === "codebuddy"
+                  ? "💡 积分按月周期结算，各模型消耗由任务与上下文决定。"
+                  : activeTab === "codex"
+                    ? "💡 包含 5 小时短周期与周限，高级套餐支持月度额度券重置。"
+                    : "💡 采用 5H 短周期平滑突发，7D 周限控制总额度。"
               )
-            : h("span", { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "10px" } }, `每 ${config.autoRefreshMinutes || 30}m 自动刷新`)
-        ),
-
-        // 单个看板视图（独立展示，不再叠放全部）
-        activeTab === "gemini"
-          ? renderModelCards("Gemini (Antigravity)", GeminiIcon, gemini, config)
-          : null,
-        activeTab === "codex"
-          ? renderModelCards("Codex (ChatGPT)", OpenAiIcon, codex, config)
-          : null,
-        activeTab === "codebuddy"
-          ? renderCodeBuddyCards("CodeBuddy", CodeBuddyIcon, codebuddy, config)
-          : null,
-
-        // 底部机制小贴士
-        h(
-          "div",
-          {
-            style: {
-              fontSize: "10px",
-              lineHeight: "1.4",
-              color: "var(--color-text-tertiary, #a1a1aa)",
-              borderTop: "1px solid var(--color-separator-border, rgba(128, 128, 128, 0.15))",
-              paddingTop: "6px",
-            },
-          },
-          activeTab === "codebuddy"
-            ? "💡 CodeBuddy 积分按月周期结算，各模型消耗不同，由任务与上下文复杂度决定。"
-            : activeTab === "codex"
-              ? "💡 包含 5 小时短周期与周限，高级套餐支持月度额度券重置。"
-              : "💡 采用 5H 短周期平滑突发，7D 周限控制总额度。"
-        )
+            )
       )
     );
   }
 
   // ── 1. 状态栏小部件 (带品牌图标，智能感知当前会话) ─────────────────────────
   function StatusBarChip() {
-    const { data, loading, error, activeEngine } = useQuotaState();
+    const { data, loading, usageLoading, error, activeEngine } = useQuotaState();
     const [config, setConfig] = useState(null);
     const [showPopover, setShowPopover] = useState(false);
 
@@ -1300,6 +2064,7 @@ export default function activate(ctx) {
         ? h(QuotaPopover, {
             data,
             loading,
+            usageLoading,
             error,
             activeEngine,
             onClose: () => setShowPopover(false),

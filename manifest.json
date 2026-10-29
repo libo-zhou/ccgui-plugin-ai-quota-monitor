@@ -1,10 +1,10 @@
 {
   "id": "ai-quota-monitor",
   "name": "AI 配额与用量监控",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "sdkVersion": "^0.3.7",
   "tier": "js",
-  "description": "支持 Google Antigravity (Gemini)、OpenAI Codex 与 CodeBuddy 账号积分，查看可用额度、积分余额与重置时间。支持底部状态栏、单个模型详情看板、自动刷新及当前会话智能联动。",
+  "description": "支持 Google Antigravity (Gemini)、OpenAI Codex 与 CodeBuddy 积分，查看可用额度、Token 消耗与成本、用量热力图与重置时间。支持状态栏与智能联动。",
   "permissions": [
     "storage",
     "events",
@@ -70,7 +70,8 @@
     "积分"
   ],
   "screenshots": [
-    "docs/codex-quota.png"
+    "docs/codex-quota.png",
+    "docs/usage-stats.png"
   ],
   "license": "MIT"
 }

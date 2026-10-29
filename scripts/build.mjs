@@ -11,5 +11,7 @@ await copyFile(resolve(root, "src/main.js"), resolve(root, "main.js"));
 await copyFile(resolve(root, "src/main.js"), resolve(output, "main.js"));
 await copyFile(resolve(root, "manifest.json"), resolve(output, "manifest.json"));
 await copyFile(resolve(root, "styles.css"), resolve(output, "styles.css"));
+await mkdir(resolve(output, "scripts"), { recursive: true });
+await copyFile(resolve(root, "scripts/usage-scanner.cjs"), resolve(output, "scripts/usage-scanner.cjs"));
 
 process.stdout.write("已从 src/main.js 生成本地安装入口及 dist 发布包（" + manifest.version + "）。\n");
