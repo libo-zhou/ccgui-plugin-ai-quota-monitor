@@ -139,7 +139,10 @@ async function scanTokenTrackerBuckets() {
               if (st.mtimeMs >= sinceTime) {
                 const lines = fs.readFileSync(full, "utf8").split("\n").filter(Boolean);
                 let model = "gpt-5.4";
-                let prevCum = 0;
+                let prevTotal = 0;
+                let prevInput = 0;
+                let prevOutput = 0;
+                let prevCache = 0;
                 for (const line of lines) {
                   if (line.includes("turn_context")) {
                     try { const tc = JSON.parse(line); if (tc.payload?.model) model = tc.payload.model; } catch (_) {}
@@ -149,18 +152,31 @@ async function scanTokenTrackerBuckets() {
                       const tc = JSON.parse(line);
                       const ts = tc.timestamp ? new Date(tc.timestamp).getTime() : 0;
                       const u = tc.payload?.info?.total_token_usage;
-                      if (u && ts > lastGenTime) {
-                        const cum = u.total_tokens || 0;
-                        const delta = Math.max(0, cum - prevCum);
-                        prevCum = cum;
-                        if (delta > 0) {
+                      if (u) {
+                        const cumTotal = u.total_tokens || 0;
+                        const cumCache = u.cached_input_tokens || 0;
+                        const cumRawInput = u.input_tokens || 0;
+                        const cumUncachedInput = Math.max(0, cumRawInput - cumCache);
+                        const cumOutput = u.output_tokens || 0;
+
+                        const deltaTotal = Math.max(0, cumTotal - prevTotal);
+                        const deltaInput = Math.max(0, cumUncachedInput - prevInput);
+                        const deltaOutput = Math.max(0, cumOutput - prevOutput);
+                        const deltaCache = Math.max(0, cumCache - prevCache);
+
+                        prevTotal = cumTotal;
+                        prevInput = cumUncachedInput;
+                        prevOutput = cumOutput;
+                        prevCache = cumCache;
+
+                        if (ts > lastGenTime && deltaTotal > 0) {
                           const iso = new Date(ts).toISOString();
                           mergedBuckets[`codex|${model}|${iso}`] = {
                             totals: {
-                              input_tokens: u.input_tokens || 0,
-                              output_tokens: u.output_tokens || 0,
-                              cached_input_tokens: u.cached_input_tokens || 0,
-                              total_tokens: delta
+                              input_tokens: deltaInput,
+                              output_tokens: deltaOutput,
+                              cached_input_tokens: deltaCache,
+                              total_tokens: deltaTotal,
                             }
                           };
                         }
