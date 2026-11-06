@@ -24,8 +24,37 @@ function formatTokens(tok) {
   return String(Math.round(n));
 }
 
+async function syncTokenTracker() {
+  const syncFile = path.join(home, ".tokentracker", "tracker", "app", "src", "commands", "sync.js");
+  if (!fs.existsSync(syncFile)) return;
+
+  const throttlePath = path.join(home, ".tokentracker", "tracker", "sync.throttle");
+  const now = Date.now();
+  let lastSync = 0;
+  try {
+    lastSync = Number(fs.readFileSync(throttlePath, "utf8")) || 0;
+  } catch (_) {}
+
+  // 3 秒防抖，避免插件并发或连续快速点击时重复同步
+  if (now - lastSync < 3000) return;
+
+  try {
+    try { fs.writeFileSync(throttlePath, String(now), "utf8"); } catch (_) {}
+    const { cmdSync } = require(syncFile);
+    await cmdSync(["--auto"], { env: process.env });
+  } catch (_) {
+    // 即使同步锁占用或失败，依然能降级读取最新已有的 core.json
+  }
+}
+
 async function scanTokenTrackerBuckets() {
   const ttBase = path.join(home, ".tokentracker", "tracker", "cursor-store-v2", "generations");
+  const syncFile = path.join(home, ".tokentracker", "tracker", "app", "src", "commands", "sync.js");
+  if (!fs.existsSync(ttBase) && !fs.existsSync(syncFile)) return null;
+
+  // 插件拉取时触发 TokenTracker 增量同步（涵盖 CodeBuddy、Codex、OMP、WorkBuddy、Claude 等全部 Agent）
+  await syncTokenTracker();
+
   if (!fs.existsSync(ttBase)) return null;
 
   try {
@@ -34,9 +63,6 @@ async function scanTokenTrackerBuckets() {
     const latest = path.join(ttBase, dirs[dirs.length - 1]);
     const corePath = path.join(latest, "core.json");
     if (!fs.existsSync(corePath)) return null;
-
-    const mGen = dirs[dirs.length - 1].match(/gen-(\d+)/);
-    const lastGenTime = mGen ? Number(mGen[1]) : 0;
 
     const core = JSON.parse(fs.readFileSync(corePath, "utf8"));
     const buckets = core.hourly?.buckets;
@@ -71,135 +97,11 @@ async function scanTokenTrackerBuckets() {
              (cache * (p.cache_read_input_token_cost || (p.input_cost_per_token ? p.input_cost_per_token * 0.1 : 0.3e-6)));
     }
 
-    // Clone buckets and scan live sessions modified since lastGenTime or today
     const mergedBuckets = { ...buckets };
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const sinceTime = Math.min(lastGenTime || todayStart, todayStart);
-
-    // Live scan OMP
-    const ompDir = path.join(home, ".omp", "agent", "sessions");
-    if (fs.existsSync(ompDir)) {
-      const walkOmp = (dir) => {
-        let items;
-        try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
-        for (const it of items) {
-          const full = path.join(dir, it.name);
-          if (it.isDirectory()) walkOmp(full);
-          else if (it.name.endsWith(".jsonl")) {
-            try {
-              const st = fs.statSync(full);
-              if (st.mtimeMs >= sinceTime) {
-                const lines = fs.readFileSync(full, "utf8").split("\n").filter(Boolean);
-                let model = "gemini-3.8-flash";
-                for (const line of lines) {
-                  if (line.includes("model_change")) {
-                    try { const mc = JSON.parse(line); if (mc.model) model = normalizeModelName(mc.model); } catch (_) {}
-                  }
-                  if (line.includes("usage")) {
-                    try {
-                      const obj = JSON.parse(line);
-                      const ts = obj.timestamp ? new Date(obj.timestamp).getTime() : 0;
-                      if (ts > lastGenTime) {
-                        const u = obj.message?.usage || obj.usage;
-                        if (u) {
-                          const inp = u.input || 0;
-                          const out = u.output || 0;
-                          const cache = u.cacheRead || 0;
-                          const tok = u.totalTokens || (inp + out + cache);
-                          const iso = new Date(ts).toISOString();
-                          mergedBuckets[`omp|${model}|${iso}`] = {
-                            totals: {
-                              input_tokens: inp,
-                              output_tokens: out,
-                              cached_input_tokens: cache,
-                              total_tokens: tok
-                            }
-                          };
-                        }
-                      }
-                    } catch (_) {}
-                  }
-                }
-              }
-            } catch (_) {}
-          }
-        }
-      };
-      walkOmp(ompDir);
-    }
-
-    // Live scan Codex
-    const codexDirs = [path.join(home, ".codex", "sessions"), path.join(home, ".codex", "archived_sessions")];
-    for (const d of codexDirs) {
-      if (!fs.existsSync(d)) continue;
-      const walkCodex = (dir) => {
-        let items;
-        try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
-        for (const it of items) {
-          const full = path.join(dir, it.name);
-          if (it.isDirectory()) walkCodex(full);
-          else if (it.name.endsWith(".jsonl")) {
-            try {
-              const st = fs.statSync(full);
-              if (st.mtimeMs >= sinceTime) {
-                const lines = fs.readFileSync(full, "utf8").split("\n").filter(Boolean);
-                let model = "gpt-5.4";
-                let prevTotal = 0;
-                let prevInput = 0;
-                let prevOutput = 0;
-                let prevCache = 0;
-                for (const line of lines) {
-                  if (line.includes("turn_context")) {
-                    try { const tc = JSON.parse(line); if (tc.payload?.model) model = normalizeModelName(tc.payload.model); } catch (_) {}
-                  }
-                  if (line.includes("token_count")) {
-                    try {
-                      const tc = JSON.parse(line);
-                      const ts = tc.timestamp ? new Date(tc.timestamp).getTime() : 0;
-                      const u = tc.payload?.info?.total_token_usage;
-                      if (u) {
-                        const cumTotal = u.total_tokens || 0;
-                        const cumCache = u.cached_input_tokens || 0;
-                        const cumRawInput = u.input_tokens || 0;
-                        const cumUncachedInput = Math.max(0, cumRawInput - cumCache);
-                        const cumOutput = u.output_tokens || 0;
-
-                        const deltaTotal = Math.max(0, cumTotal - prevTotal);
-                        const deltaInput = Math.max(0, cumUncachedInput - prevInput);
-                        const deltaOutput = Math.max(0, cumOutput - prevOutput);
-                        const deltaCache = Math.max(0, cumCache - prevCache);
-
-                        prevTotal = cumTotal;
-                        prevInput = cumUncachedInput;
-                        prevOutput = cumOutput;
-                        prevCache = cumCache;
-
-                        if (ts > lastGenTime && deltaTotal > 0) {
-                          const iso = new Date(ts).toISOString();
-                          mergedBuckets[`codex|${model}|${iso}`] = {
-                            totals: {
-                              input_tokens: deltaInput,
-                              output_tokens: deltaOutput,
-                              cached_input_tokens: deltaCache,
-                              total_tokens: deltaTotal,
-                            }
-                          };
-                        }
-                      }
-                    } catch (_) {}
-                  }
-                }
-              }
-            } catch (_) {}
-          }
-        }
-      };
-      walkCodex(d);
-    }
-
     const todayStartIso = new Date(todayStart).toISOString();
-    const weekStartIso = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)).toISOString();
+    const weekStartIso = new Date(todayStart - ((now.getDay() + 6) % 7) * 86400000).toISOString();
     const monthStartIso = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
     function aggregateBuckets(startIso) {
