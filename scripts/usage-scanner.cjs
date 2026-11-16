@@ -58,11 +58,36 @@ async function scanTokenTrackerBuckets() {
   if (!fs.existsSync(ttBase)) return null;
 
   try {
-    const dirs = fs.readdirSync(ttBase).filter(d => d.startsWith("gen-")).sort();
+    const dirs = fs.readdirSync(ttBase)
+      .filter(d => d.startsWith("gen-"))
+      .sort((a, b) => {
+        const tsA = Number(a.split("-")[1]) || 0;
+        const tsB = Number(b.split("-")[1]) || 0;
+        return tsA - tsB;
+      });
     if (!dirs.length) return null;
-    const latest = path.join(ttBase, dirs[dirs.length - 1]);
-    const corePath = path.join(latest, "core.json");
-    if (!fs.existsSync(corePath)) return null;
+
+    let corePath = null;
+    for (let i = dirs.length - 1; i >= 0; i--) {
+      const d = path.join(ttBase, dirs[i]);
+      const candidates = ["core-v3.json", "core-v2.json", "core.json"];
+      for (const c of candidates) {
+        const p = path.join(d, c);
+        if (fs.existsSync(p)) {
+          corePath = p;
+          break;
+        }
+      }
+      if (!corePath) {
+        try {
+          const match = fs.readdirSync(d).find(f => f.startsWith("core") && f.endsWith(".json"));
+          if (match) corePath = path.join(d, match);
+        } catch (_) {}
+      }
+      if (corePath) break;
+    }
+
+    if (!corePath) return null;
 
     const core = JSON.parse(fs.readFileSync(corePath, "utf8"));
     const buckets = core.hourly?.buckets;
@@ -212,7 +237,11 @@ async function scanTokenTrackerBuckets() {
     for (const [key, b] of Object.entries(mergedBuckets)) {
       const [provider, rawModel, ts] = key.split("|");
       const model = normalizeModelName(rawModel);
-      const dayStr = ts.slice(0, 10);
+      const d = new Date(ts);
+      const pad = (n) => String(n).padStart(2, "0");
+      const dayStr = !isNaN(d.getTime())
+        ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+        : ts.slice(0, 10);
       if (!heatmap[dayStr]) heatmap[dayStr] = { tokens: 0, cost: 0 };
       const tok = b.totals?.total_tokens || 0;
       const inp = b.totals?.input_tokens || 0;
@@ -274,19 +303,55 @@ function scanFallback() {
       const sqlite = require("node:sqlite");
       const db = new sqlite.DatabaseSync(appDbPath, { readOnly: true });
       const tblList = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('usage_ledger', 'usage_ledger_legacy')").all();
-      const targetTable = tblList[0]?.name;
-      if (targetTable) {
-        const rows = db.prepare(`
-          SELECT ts, engine, model, session_id, input_tokens, output_tokens, cache_read, cache_write
-          FROM ${targetTable}
+      for (const t of tblList) {
+        try {
+          const rows = db.prepare(`
+            SELECT ts, engine, model, session_id, input_tokens, output_tokens, cache_read, cache_write
+            FROM ${t.name}
+          `).all();
+          for (const r of rows) {
+            const rowKey = `${r.session_id || ""}_${r.ts}_${r.engine}_${r.model}`;
+            if (knownSessions.has(rowKey)) continue;
+            knownSessions.add(rowKey);
+            const inp = Number(r.input_tokens || 0);
+            const out = Number(r.output_tokens || 0);
+            const cache = Number(r.cache_read || 0);
+            allEntries.push({
+              ts: Number(r.ts),
+              engine: (r.engine || "other").toLowerCase(),
+              model: normalizeModelName(r.model),
+              input: inp,
+              output: out,
+              cache: cache,
+              total: inp + out + cache,
+              cost: calcCost(r.model, inp, out, cache)
+            });
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  const usageStatsDbPath = path.join(home, ".ccgui-next", "usage-stats.db");
+  if (fs.existsSync(usageStatsDbPath)) {
+    try {
+      const sqlite = require("node:sqlite");
+      const sdb = new sqlite.DatabaseSync(usageStatsDbPath, { readOnly: true });
+      const sTblList = sdb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'events'").all();
+      if (sTblList.length > 0) {
+        const rows = sdb.prepare(`
+          SELECT ts_ms, engine, model, session_id, input, output, cache_read, cache_write
+          FROM events
         `).all();
         for (const r of rows) {
-          if (r.session_id) knownSessions.add(r.session_id);
-          const inp = Number(r.input_tokens || 0);
-          const out = Number(r.output_tokens || 0);
+          const rowKey = `${r.session_id || ""}_${r.ts_ms}_${r.engine}_${r.model}`;
+          if (knownSessions.has(rowKey)) continue;
+          knownSessions.add(rowKey);
+          const inp = Number(r.input || 0);
+          const out = Number(r.output || 0);
           const cache = Number(r.cache_read || 0);
           allEntries.push({
-            ts: Number(r.ts),
+            ts: Number(r.ts_ms),
             engine: (r.engine || "other").toLowerCase(),
             model: normalizeModelName(r.model),
             input: inp,

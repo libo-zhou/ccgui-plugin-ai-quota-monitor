@@ -32,9 +32,17 @@ export default function activate(ctx) {
   }
 
   // ── 格式化工具函数 ──────────────────────────────────────────────────────────
+  function normalizeTimestamp(ts) {
+    if (!ts) return null;
+    if (typeof ts === "number") return isNaN(ts) ? null : ts;
+    const parsed = Date.parse(ts);
+    return isNaN(parsed) ? null : parsed;
+  }
+
   function formatResetTime(resetsAt) {
-    if (!resetsAt) return "--";
-    const diff = Number(resetsAt) - Date.now();
+    const ts = normalizeTimestamp(resetsAt);
+    if (!ts) return "--";
+    const diff = ts - Date.now();
     if (diff <= 0) return "即将重置";
     const minutes = Math.floor(diff / (60 * 1000));
     const hours = Math.floor(diff / (3600 * 1000));
@@ -51,8 +59,9 @@ export default function activate(ctx) {
   }
 
   function formatExactDate(resetsAt) {
-    if (!resetsAt) return "--";
-    const date = new Date(Number(resetsAt));
+    const ts = normalizeTimestamp(resetsAt);
+    if (!ts) return "--";
+    const date = new Date(ts);
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
     const d = String(date.getDate()).padStart(2, "0");
@@ -386,55 +395,192 @@ export default function activate(ctx) {
   }
 
   // ── Gemini (Antigravity) 抓取与解析 ──────────────────────────────────────────
-  async function fetchGeminiQuota() {
+  function safeParseJson(raw) {
+    if (!raw || typeof raw !== "string") return null;
+    const trimmed = raw.trim();
     try {
-      const res = await ctx.bridge.invoke("plugin_exec_run", {
-        bin: "omp",
-        args: ["usage", "--provider", "google-antigravity", "--json"],
-        timeoutMs: 25000,
-      });
-
-      if (res.code !== 0) {
-        return { error: `omp 退出码 ${res.code}` };
+      return JSON.parse(trimmed);
+    } catch (_) {
+      const start = trimmed.indexOf("{");
+      const end = trimmed.lastIndexOf("}");
+      if (start !== -1 && end !== -1 && end > start) {
+        try {
+          return JSON.parse(trimmed.slice(start, end + 1));
+        } catch (_) {}
       }
+      return null;
+    }
+  }
 
-      const json = JSON.parse(res.stdout);
-      const reports = json.reports || [];
-      const agy = reports.find((r) => r.provider === "google-antigravity") || reports[0];
-      if (!agy) return { error: "未找到 Antigravity 报告" };
+  // 通过 Antigravity CLI (agy) 查询配额
+  async function fetchViaAgy() {
+    const res = await ctx.bridge.invoke("plugin_exec_run", {
+      bin: "agy",
+      args: ["--output-format", "json", "-p", "/usage"],
+      timeoutMs: 25000,
+    });
 
-      const limits = agy.limits || [];
-      const meta = agy.metadata || {};
+    if (res.code !== 0) {
+      throw new Error(`agy 退出码 ${res.code}${res.stderr ? `: ${res.stderr.trim()}` : ""}`);
+    }
 
-      const gWeekly = limits.find((l) => l.id && l.id.includes("gemini-weekly"));
-      const g5h = limits.find((l) => l.id && l.id.includes("gemini-5h"));
-      const p3Weekly = limits.find((l) => l.id && l.id.includes("3p-weekly"));
-      const p35h = limits.find((l) => l.id && l.id.includes("3p-5h"));
+    const json = safeParseJson(res.stdout);
+    if (!json || json.status === "ERROR") {
+      throw new Error(json?.error || json?.response || "agy 返回空数据或错误状态");
+    }
 
-      function parseItem(item) {
-        if (!item) return null;
-        const amount = item.amount || {};
-        const window = item.window || {};
-        const remaining = typeof amount.remaining === "number" ? amount.remaining : 100;
-        const used = typeof amount.used === "number" ? amount.used : (100 - remaining);
-        return {
-          remaining: Math.round(remaining * 10) / 10,
-          used: Math.round(used * 10) / 10,
-          resetsAt: window.resetsAt || null,
-        };
+    const command = json.command || {};
+    const data = command.data || {};
+    const groups = data.groups || [];
+
+    const allBuckets = [];
+    for (const group of groups) {
+      if (Array.isArray(group.buckets)) {
+        allBuckets.push(...group.buckets);
+      }
+    }
+
+    if (allBuckets.length === 0) {
+      throw new Error("agy 配额数据中未找到限额分组");
+    }
+
+    const gWeekly = allBuckets.find((b) => b.id && b.id.includes("gemini-weekly"));
+    const g5h = allBuckets.find((b) => b.id && b.id.includes("gemini-5h"));
+    const p3Weekly = allBuckets.find((b) => b.id && b.id.includes("3p-weekly"));
+    const p35h = allBuckets.find((b) => b.id && b.id.includes("3p-5h"));
+
+    function parseBucket(bucket) {
+      if (!bucket) return null;
+      let remaining = 100;
+      if (typeof bucket.remaining_fraction === "number") {
+        remaining = bucket.remaining_fraction * 100;
+      } else if (typeof bucket.remaining === "number") {
+        remaining = bucket.remaining;
+      }
+      remaining = Math.max(0, Math.min(100, Math.round(remaining * 10) / 10));
+      const used = Math.round((100 - remaining) * 10) / 10;
+
+      let resetsAt = null;
+      const rawReset = bucket.reset_time || bucket.resetsAt;
+      if (rawReset) {
+        if (typeof rawReset === "number") {
+          resetsAt = rawReset;
+        } else {
+          const parsed = Date.parse(rawReset);
+          if (!isNaN(parsed)) resetsAt = parsed;
+        }
       }
 
       return {
-        email: meta.email || "",
-        projectId: meta.projectId || "",
-        weekly: parseItem(gWeekly),
-        h5: parseItem(g5h),
-        p3Weekly: parseItem(p3Weekly),
-        p35h: parseItem(p35h),
-        fetchedAt: agy.fetchedAt || Date.now(),
+        remaining,
+        used,
+        resetsAt,
       };
+    }
+
+    let email = "";
+    try {
+      const emailRes = await ctx.bridge.invoke("plugin_exec_run", {
+        bin: "node",
+        args: [
+          "-e",
+          'const fs=require("fs"),path=require("path"),os=require("os");try{const p=path.join(os.homedir(),".gemini","antigravity-cli","cli.log");const s=fs.readFileSync(p,"utf8");const m=s.match(/email=([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})/);if(m)console.log(m[1]);}catch(_){}',
+        ],
+        timeoutMs: 5000,
+      });
+      if (emailRes && emailRes.code === 0 && emailRes.stdout && emailRes.stdout.trim()) {
+        email = emailRes.stdout.trim();
+      }
+    } catch (_) {}
+
+    return {
+      source: "agy",
+      email,
+      projectId: "",
+      weekly: parseBucket(gWeekly),
+      h5: parseBucket(g5h),
+      p3Weekly: parseBucket(p3Weekly),
+      p35h: parseBucket(p35h),
+      fetchedAt: Date.now(),
+    };
+  }
+
+  // 通过 OMP CLI 查询配额 (兼容回退)
+  async function fetchViaOmp() {
+    const res = await ctx.bridge.invoke("plugin_exec_run", {
+      bin: "omp",
+      args: ["usage", "--provider", "google-antigravity", "--json"],
+      timeoutMs: 25000,
+    });
+
+    if (res.code !== 0) {
+      throw new Error(`omp 退出码 ${res.code}${res.stderr ? `: ${res.stderr.trim()}` : ""}`);
+    }
+
+    const json = safeParseJson(res.stdout);
+    if (!json) throw new Error("omp 输出不是有效 JSON");
+
+    const reports = json.reports || [];
+    const agy = reports.find((r) => r.provider === "google-antigravity") || reports[0];
+    if (!agy) throw new Error("未找到 Antigravity 报告");
+
+    const limits = agy.limits || [];
+    const meta = agy.metadata || {};
+
+    const gWeekly = limits.find((l) => l.id && l.id.includes("gemini-weekly"));
+    const g5h = limits.find((l) => l.id && l.id.includes("gemini-5h"));
+    const p3Weekly = limits.find((l) => l.id && l.id.includes("3p-weekly"));
+    const p35h = limits.find((l) => l.id && l.id.includes("3p-5h"));
+
+    function parseItem(item) {
+      if (!item) return null;
+      const amount = item.amount || {};
+      const window = item.window || {};
+      const remaining = typeof amount.remaining === "number" ? amount.remaining : 100;
+      const used = typeof amount.used === "number" ? amount.used : (100 - remaining);
+      let resetsAt = null;
+      const rawReset = window.resetsAt;
+      if (rawReset) {
+        if (typeof rawReset === "number") {
+          resetsAt = rawReset;
+        } else {
+          const parsed = Date.parse(rawReset);
+          if (!isNaN(parsed)) resetsAt = parsed;
+        }
+      }
+      return {
+        remaining: Math.round(remaining * 10) / 10,
+        used: Math.round(used * 10) / 10,
+        resetsAt,
+      };
+    }
+
+    return {
+      source: "omp",
+      email: meta.email || "",
+      projectId: meta.projectId || "",
+      weekly: parseItem(gWeekly),
+      h5: parseItem(g5h),
+      p3Weekly: parseItem(p3Weekly),
+      p35h: parseItem(p35h),
+      fetchedAt: agy.fetchedAt || Date.now(),
+    };
+  }
+
+  // 统一入口：智能自动探测（优先 Antigravity CLI，失败自动回退 Oh-My-Pi）
+  async function fetchGeminiQuota() {
+    let agyErr = null;
+    try {
+      return await fetchViaAgy();
     } catch (e) {
-      return { error: e.message || String(e) };
+      agyErr = e.message || String(e);
+    }
+
+    try {
+      return await fetchViaOmp();
+    } catch (e) {
+      const ompErr = e.message || String(e);
+      return { error: `Antigravity CLI: ${agyErr}；omp: ${ompErr}` };
     }
   }
 
@@ -552,16 +698,21 @@ export default function activate(ctx) {
     try {
       const res = await ctx.bridge.invoke("plugin_exec_run", {
         bin: "node",
-        args: ["-e", runnerCode],
+        args: ["--no-warnings", "-e", runnerCode],
         timeoutMs: 30000,
       });
       if (res.code !== 0) {
         console.warn("[ai-quota-monitor] usage scan error:", res.stderr);
         return null;
       }
-      const parsed = JSON.parse(res.stdout);
-      if (parsed && !parsed.error) {
-        return parsed;
+      const raw = (res.stdout || "").trim();
+      const start = raw.indexOf("{");
+      const end = raw.lastIndexOf("}");
+      if (start >= 0 && end > start) {
+        const parsed = JSON.parse(raw.slice(start, end + 1));
+        if (parsed && !parsed.error) {
+          return parsed;
+        }
       }
       return null;
     } catch (e) {
@@ -757,7 +908,7 @@ export default function activate(ctx) {
                       color: "#0284c7",
                     },
                   },
-                  "Antigravity"
+                  modelData.source === "omp" ? "Antigravity (OMP)" : "Antigravity (AGY)"
                 )
               : null
         ),
@@ -1850,7 +2001,7 @@ export default function activate(ctx) {
 
               // 单个看板视图（独立展示，不再叠放全部）
               activeTab === "gemini"
-                ? renderModelCards("Gemini (Antigravity)", GeminiIcon, gemini, config)
+                ? renderModelCards("Gemini", GeminiIcon, gemini, config)
                 : null,
               activeTab === "codex"
                 ? renderModelCards("Codex (ChatGPT)", OpenAiIcon, codex, config)

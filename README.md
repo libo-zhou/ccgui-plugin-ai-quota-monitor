@@ -16,7 +16,7 @@ CC GUI 的 AI 配额与用量查询插件。当前支持 **Google Antigravity（
 ## 使用要求
 
 - CC GUI 插件 SDK `>=0.3.7`。
-- **Antigravity / Gemini**：安装 `omp` 命令行工具，并在 Antigravity 中完成登录。
+- **Antigravity / Gemini**：支持通过 Antigravity CLI (`agy`) 或 `omp` 查询，并在 Antigravity 中完成登录。插件默认开启智能探测：优先尝试 `agy` CLI，若未安装或执行异常则自动平滑回退至 `omp`。
 - **Codex**：安装 Node.js，并通过 Codex CLI 登录，使本机存在 `~/.codex/auth.json`。
 - **CodeBuddy**：安装 Node.js，并在 CodeBuddy / WorkBuddy 客户端或 CLI 中完成登录。
 
@@ -26,7 +26,8 @@ CC GUI 的 AI 配额与用量查询插件。当前支持 **Google Antigravity（
 
 插件只查询用量，不读取聊天内容或项目文件。
 
-- `exec:omp`：运行 `omp usage --provider google-antigravity --json`。Antigravity 的凭证及服务通信由本机 OMP 处理；插件读取并展示其返回的额度报告。
+- `exec:agy`：运行 `agy -p /quota --output-format json` 获取 Antigravity 配额，智能首选。
+- `exec:omp`：运行 `omp usage --provider google-antigravity --json` 获取 Antigravity 配额，作为智能降级兜底。
 - `exec:node`：读取 `~/.codex/auth.json` 中的 Codex 登录访问令牌。令牌仅用于当前查询，不写入插件存储或日志。
 - `network:chatgpt.com`：通过 CC GUI 的网络代理向 `chatgpt.com` 请求 Codex 用量。
 - `network:copilot.tencent.com`：向腾讯云 `copilot.tencent.com` 请求 CodeBuddy 账号配额与积分用量。
