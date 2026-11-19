@@ -417,6 +417,8 @@ export default function activate(ctx) {
     const res = await ctx.bridge.invoke("plugin_exec_run", {
       bin: "agy",
       args: ["--output-format", "json", "-p", "/usage"],
+      // 配额查询不需要触发 agy 的后台更新进程。
+      env: { AGY_CLI_DISABLE_AUTO_UPDATE: "true" },
       timeoutMs: 25000,
     });
 
