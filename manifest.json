@@ -1,7 +1,7 @@
 {
   "id": "ai-quota-monitor",
   "name": "AI 配额与用量监控",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "sdkVersion": "^0.3.25",
   "tier": "js",
   "description": "查看 Gemini、Codex、CodeBuddy、OpenCode、Claude、Grok、GLM、Kimi 的配额与积分，最多自选三个页签展示，并统计本地 Token 用量、成本及热力图。",
@@ -74,20 +74,14 @@
   "author": "libo-zhou",
   "repo": "libo-zhou/ccgui-plugin-ai-quota-monitor",
   "keywords": [
-    "ai",
     "quota",
     "usage",
     "Gemini",
     "Codex",
     "CodeBuddy",
-    "credits",
-    "积分",
     "OpenCode",
     "Grok",
-    "xAI",
-    "Claude",
-    "GLM",
-    "Kimi"
+    "订阅配额"
   ],
   "screenshots": [
     "docs/codex-quota.png",
