@@ -4,31 +4,42 @@
  */
 
 export default function activate(ctx) {
-  const { createElement: h, useState, useEffect, useCallback, useMemo } = ctx.react;
+  const { createElement: h, useState, useEffect, useCallback, useMemo, useRef, useId } = ctx.react;
 
   // ── 内部状态与订阅 ──────────────────────────────────────────────────────────
   let cachedData = null;
-  let isFetching = false;
+  const pending = new Map();
+  const connections = new Map();
+  let probeOpenCode = true;
+  let visibleServices = DEFAULT_QUOTA_SERVICES;
+  let preferredService = null;
+  let config = {};
+  let initialized = false;
+  let disposed = false;
+  let cacheWrite = Promise.resolve();
   let isFetchingUsage = false;
-  let fetchError = null;
   let autoTimer = null;
   let activeEngine = null;
   const subscribers = new Set();
 
+  function quotaSnapshot() {
+    return {
+      data: cachedData,
+      loading: pending.size > 0,
+      pendingIds: [...pending.keys()],
+      connectedIds: [...connections.keys()],
+      usageLoading: isFetchingUsage,
+      activeEngine,
+      visibleServices,
+      preferredService,
+      config,
+      initialized,
+    };
+  }
+
   function notifySubscribers() {
-    for (const sub of subscribers) {
-      try {
-        sub({
-          data: cachedData,
-          loading: isFetching,
-          usageLoading: isFetchingUsage,
-          error: fetchError,
-          activeEngine,
-        });
-      } catch (err) {
-        console.error("[gemini-quota] subscriber error:", err);
-      }
-    }
+    const snapshot = quotaSnapshot();
+    for (const sub of subscribers) sub(snapshot);
   }
 
   // ── 格式化工具函数 ──────────────────────────────────────────────────────────
@@ -288,45 +299,63 @@ export default function activate(ctx) {
     );
   }
 
-  function ChevronDownIcon({ size = 12, className, style }) {
-    return h(
-      "svg",
-      {
+  /*!
+   * OpenCode、Grok、Kimi 和 Claude 图标来自 CC GUI。
+   * 智谱图标来自 CC GUI 设置页使用的 @lobehub/icons-static-svg。
+   *
+   * MIT License
+   *
+   * Copyright (c) 2026 zhukunpenglinyutong（朱昆鹏）
+   * Copyright (c) 2023 LobeHub
+   *
+   * Permission is hereby granted, free of charge, to any person obtaining a copy
+   * of this software and associated documentation files (the "Software"), to deal
+   * in the Software without restriction, including without limitation the rights
+   * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   * copies of the Software, and to permit persons to whom the Software is
+   * furnished to do so, subject to the following conditions:
+   *
+   * The above copyright notice and this permission notice shall be included in all
+   * copies or substantial portions of the Software.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   * SOFTWARE.
+   */
+  function quotaBrandIcon(paths, fill = "currentColor", fillRule = "evenodd") {
+    return function QuotaBrandIcon({ size = 12 }) {
+      return h("svg", {
         width: size,
         height: size,
         viewBox: "0 0 24 24",
-        fill: "none",
-        stroke: "currentColor",
-        strokeWidth: 2.2,
-        strokeLinecap: "round",
-        strokeLinejoin: "round",
-        className,
-        style: Object.assign({ flexShrink: 0 }, style),
-      },
-      h("polyline", { points: "6 9 12 15 18 9" })
-    );
+        fill,
+        fillRule,
+        "aria-hidden": true,
+        style: { flexShrink: 0 },
+      }, paths.map((d) => h("path", { key: d, d })));
+    };
   }
 
-  function StatsIcon({ size = 13, className, style }) {
-    return h(
-      "svg",
-      {
-        width: size,
-        height: size,
-        viewBox: "0 0 24 24",
-        fill: "none",
-        stroke: "currentColor",
-        strokeWidth: 2,
-        strokeLinecap: "round",
-        strokeLinejoin: "round",
-        className,
-        style: Object.assign({ flexShrink: 0 }, style),
-      },
-      h("line", { x1: 18, y1: 20, x2: 18, y2: 10 }),
-      h("line", { x1: 12, y1: 20, x2: 12, y2: 4 }),
-      h("line", { x1: 6, y1: 20, x2: 6, y2: 14 })
-    );
-  }
+  const OpenCodeIcon = quotaBrandIcon([
+    "M16 6H8v12h8V6zm4 16H4V2h16v20z",
+  ]);
+  const GrokIcon = quotaBrandIcon([
+    "M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815",
+  ]);
+  const KimiIcon = quotaBrandIcon([
+    "M21.846 0a1.923 1.923 0 110 3.846H20.15a.226.226 0 01-.227-.226V1.923C19.923.861 20.784 0 21.846 0z",
+    "M11.065 11.199l7.257-7.2c.137-.136.06-.41-.116-.41H14.3a.164.164 0 00-.117.051l-7.82 7.756c-.122.12-.302.013-.302-.179V3.82c0-.127-.083-.23-.185-.23H3.186c-.103 0-.186.103-.186.23V19.77c0 .128.083.23.186.23h2.69c.103 0 .186-.102.186-.23v-3.25c0-.069.025-.135.069-.178l2.424-2.406a.158.158 0 01.205-.023l6.484 4.772a7.677 7.677 0 003.453 1.283c.108.012.2-.095.2-.23v-3.06c0-.117-.07-.212-.164-.227a5.028 5.028 0 01-2.027-.807l-5.613-4.064c-.117-.078-.132-.279-.028-.381z",
+  ]);
+  const ClaudeSubscriptionIcon = quotaBrandIcon([
+    "M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z",
+  ], "#D97757", "nonzero");
+  const GlmIcon = quotaBrandIcon([
+    "M11.991 23.503a.24.24 0 00-.244.248.24.24 0 00.244.249.24.24 0 00.245-.249.24.24 0 00-.22-.247l-.025-.001zM9.671 5.365a1.697 1.697 0 011.099 2.132l-.071.172-.016.04-.018.054c-.07.16-.104.32-.104.498-.035.71.47 1.279 1.186 1.314h.366c1.309.053 2.338 1.173 2.286 2.523-.052 1.332-1.152 2.38-2.478 2.327h-.174c-.715.018-1.274.64-1.239 1.368 0 .124.018.23.053.337.209.373.54.658.96.8.75.23 1.517-.125 1.9-.782l.018-.035c.402-.64 1.17-.96 1.92-.711.854.284 1.378 1.226 1.099 2.167a1.661 1.661 0 01-2.077 1.102 1.711 1.711 0 01-.907-.711l-.017-.035c-.2-.323-.463-.58-.851-.711l-.056-.018a1.646 1.646 0 00-1.954.746 1.66 1.66 0 01-1.065.764 1.677 1.677 0 01-1.989-1.279c-.209-.906.332-1.83 1.257-2.043a1.51 1.51 0 01.296-.035h.018c.68-.071 1.151-.622 1.116-1.333a1.307 1.307 0 00-.227-.693 2.515 2.515 0 01-.366-1.403 2.39 2.39 0 01.366-1.208c.14-.195.21-.444.227-.693.018-.71-.506-1.261-1.186-1.332l-.07-.018a1.43 1.43 0 01-.299-.07l-.05-.019a1.7 1.7 0 01-1.047-2.114 1.68 1.68 0 012.094-1.101zm-5.575 10.11c.26-.264.639-.367.994-.27.355.096.633.379.728.74.095.362-.007.748-.267 1.013-.402.41-1.053.41-1.455 0a1.062 1.062 0 010-1.482zm14.845-.294c.359-.09.738.024.992.297.254.274.344.665.237 1.025-.107.36-.396.634-.756.718-.551.128-1.1-.22-1.23-.781a1.05 1.05 0 01.757-1.26zm-.064-4.39c.314.32.49.753.49 1.206 0 .452-.176.886-.49 1.206-.315.32-.74.5-1.185.5-.444 0-.87-.18-1.184-.5a1.727 1.727 0 010-2.412 1.654 1.654 0 012.369 0zm-11.243.163c.364.484.447 1.128.218 1.691a1.665 1.665 0 01-2.188.923c-.855-.36-1.26-1.358-.907-2.228a1.68 1.68 0 011.33-1.038c.593-.08 1.183.169 1.547.652zm11.545-4.221c.368 0 .708.2.892.524.184.324.184.724 0 1.048a1.026 1.026 0 01-.892.524c-.568 0-1.03-.47-1.03-1.048 0-.579.462-1.048 1.03-1.048zm-14.358 0c.368 0 .707.2.891.524.184.324.184.724 0 1.048a1.026 1.026 0 01-.891.524c-.569 0-1.03-.47-1.03-1.048 0-.579.461-1.048 1.03-1.048zm10.031-1.475c.925 0 1.675.764 1.675 1.706s-.75 1.705-1.675 1.705-1.674-.763-1.674-1.705c0-.942.75-1.706 1.674-1.706zm-2.626-.684c.362-.082.653-.356.761-.718a1.062 1.062 0 00-.238-1.028 1.017 1.017 0 00-.996-.294c-.547.14-.881.7-.752 1.257.13.558.675.907 1.225.783zm0 16.876c.359-.087.644-.36.75-.72a1.062 1.062 0 00-.237-1.019 1.018 1.018 0 00-.985-.301 1.037 1.037 0 00-.762.717c-.108.361-.017.754.239 1.028.245.263.606.377.953.305l.043-.01zM17.19 3.5a.631.631 0 00.628-.64c0-.355-.279-.64-.628-.64a.631.631 0 00-.628.64c0 .355.28.64.628.64zm-10.38 0a.631.631 0 00.628-.64c0-.355-.28-.64-.628-.64a.631.631 0 00-.628.64c0 .355.279.64.628.64zm-5.182 7.852a.631.631 0 00-.628.64c0 .354.28.639.628.639a.63.63 0 00.627-.606l.001-.034a.62.62 0 00-.628-.64zm5.182 9.13a.631.631 0 00-.628.64c0 .355.279.64.628.64a.631.631 0 00.628-.64c0-.355-.28-.64-.628-.64zm10.38.018a.631.631 0 00-.628.64c0 .355.28.64.628.64a.631.631 0 00.628-.64c0-.355-.279-.64-.628-.64zm5.182-9.148a.631.631 0 00-.628.64c0 .354.279.639.628.639a.631.631 0 00.628-.64c0-.355-.28-.64-.628-.64zm-.384-4.992a.24.24 0 00.244-.249.24.24 0 00-.244-.249.24.24 0 00-.244.249c0 .142.122.249.244.249zM11.991.497a.24.24 0 00.245-.248A.24.24 0 0011.99 0a.24.24 0 00-.244.249c0 .133.108.236.223.247l.021.001zM2.011 6.36a.24.24 0 00.245-.249.24.24 0 00-.244-.249.24.24 0 00-.244.249.24.24 0 00.244.249zm0 11.263a.24.24 0 00-.243.248.24.24 0 00.244.249.24.24 0 00.244-.249.252.252 0 00-.244-.248zm19.995-.018a.24.24 0 00-.245.248.24.24 0 00.245.25.24.24 0 00.244-.25.252.252 0 00-.244-.248z",
+  ], "#3859FF", "nonzero");
 
   function QuotaIcon({ size = 13, className, style }) {
     return h(
@@ -662,7 +691,7 @@ export default function activate(ctx) {
 
   // ── CodeBuddy (Tencent Copilot) 抓取与解析 ──────────────────────────────────
   async function fetchCodeBuddyQuota() {
-    const nodeInlineCode = 'const fs=require("fs"),path=require("path"),os=require("os"),https=require("https");(async function(){try{const dirs=[];if(process.platform==="win32"){const l=process.env.LOCALAPPDATA||path.join(os.homedir(),"AppData","Local");dirs.push(path.join(l,"CodeBuddyExtension","Data","Public","auth"));}else if(process.platform==="darwin"){dirs.push(path.join(os.homedir(),"Library","Application Support","CodeBuddyExtension","Data","Public","auth"));}else{const x=process.env.XDG_DATA_HOME||path.join(os.homedir(),".local","share");dirs.push(path.join(x,"CodeBuddyExtension","Data","Public","auth"));}dirs.push(path.join(os.homedir(),".codebuddy","auth"));const files=[];for(const d of dirs){if(fs.existsSync(d)){try{for(const f of fs.readdirSync(d)){if(f.endsWith(".info")){const fp=path.join(d,f);try{files.push({p:fp,m:fs.statSync(fp).mtimeMs});}catch(_){}}}}catch(_){}}}files.sort((a,b)=>b.m-a.m);let cred=null;for(const it of files){try{const d=JSON.parse(fs.readFileSync(it.p,"utf8"));const token=d.auth&&(typeof d.auth.accessToken==="string"?d.auth.accessToken:d.auth.accessToken&&d.auth.accessToken.token);if(token){const acc=d.account||{};cred={token,uid:acc.uid||"",enterpriseId:acc.enterpriseId||"",enterpriseName:acc.enterpriseName||"",userName:acc.enterpriseUserName||acc.displayName||acc.nickname||"",accountType:acc.type||"",domain:(d.auth&&d.auth.domain)||"www.codebuddy.cn"};break;}}catch(_){}}if(!cred){console.log(JSON.stringify({error:"未检测到 CodeBuddy 登录"}));return;}function requestPost(urlPath,body){return new Promise((resolve,reject)=>{const data=JSON.stringify(body||{});const req=https.request({hostname:"copilot.tencent.com",path:urlPath,method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+cred.token,"X-User-Id":cred.uid,"X-Enterprise-Id":cred.enterpriseId,"X-Tenant-Id":cred.enterpriseId,"X-Domain":cred.domain,"X-Product":"SaaS","X-IDE-Name":"CodeBuddyIDE","User-Agent":"CLI/2.177.0 CodeBuddy/2.177.0"},timeout:15000},res=>{let buf="";res.on("data",c=>buf+=c);res.on("end",()=>{try{resolve({status:res.statusCode,data:JSON.parse(buf)});}catch(e){resolve({status:res.statusCode,raw:buf});}});});req.on("error",reject);req.on("timeout",()=>{req.destroy();reject(new Error("网络请求超时"));});req.write(data);req.end();});}let res=null;if(cred.enterpriseId){try{res=await requestPost("/billing/meter/get-enterprise-user-usage",{});}catch(_){}}const rData=res&&res.data&&res.data.data;if(rData&&typeof rData.credit==="number"){const limit=typeof rData.limitNum==="number"?rData.limitNum:0;const used=Math.round(rData.credit*10)/10;const left=limit===-1?null:Math.max(0,Math.round((limit-used)*10)/10);const remainingPercent=limit>0?Math.max(0,Math.min(100,Math.round((left/limit)*1000)/10)):limit===-1?100:0;const usedPercent=limit>0?Math.max(0,Math.min(100,Math.round((used/limit)*1000)/10)):0;let resetsAt=null;if(rData.cycleResetTime||rData.cycleEndTime){const parsed=Date.parse((rData.cycleResetTime||rData.cycleEndTime).replace(/-/g,"/"));if(!isNaN(parsed)) resetsAt=parsed;}console.log(JSON.stringify({ok:true,enterpriseName:cred.enterpriseName,userName:cred.userName,accountType:cred.accountType,uid:cred.uid,limitNum:limit,used,left,remainingPercent,usedPercent,cycleStartTime:rData.cycleStartTime,cycleEndTime:rData.cycleEndTime,resetsAt,fetchedAt:Date.now()}));return;}const sumRes=await requestPost("/billing/meter/get-user-resource-summary",{});const sData=sumRes&&sumRes.data&&sumRes.data.data;if(sData){console.log(JSON.stringify({ok:true,enterpriseName:cred.enterpriseName,userName:cred.userName,accountType:cred.accountType,uid:cred.uid,limitNum:null,used:0,left:null,remainingPercent:100,usedPercent:0,packages:sData.Packages||[],fetchedAt:Date.now()}));return;}console.log(JSON.stringify({error:res?.data?.msg||"查询 CodeBuddy 额度失败"}));}catch(err){console.log(JSON.stringify({error:err.message||String(err)}));}})();';
+    const nodeInlineCode = 'const fs=require("fs"),path=require("path"),os=require("os"),https=require("https");(async function(){try{const base=process.platform==="win32"?(process.env.LOCALAPPDATA||path.join(os.homedir(),"AppData","Local")):process.platform==="darwin"?path.join(os.homedir(),"Library","Application Support"):(process.env.XDG_DATA_HOME||path.join(os.homedir(),".local","share"));const authFile=path.join(base,"CodeBuddyExtension","Data","Public","auth","Tencent-Cloud.coding-copilot.info");if(!fs.existsSync(authFile)){console.log(JSON.stringify({error:"未找到 CodeBuddy 登录文件，请先在 CodeBuddy 登录。"}));return;}const raw=fs.readFileSync(authFile,"utf8");let d;try{d=JSON.parse(raw);}catch(_){console.log(JSON.stringify({error:"CodeBuddy 登录文件无法解析，请重新登录。"}));return;}const token=d&&d.auth&&(typeof d.auth.accessToken==="string"?d.auth.accessToken:d.auth.accessToken&&d.auth.accessToken.token);if(typeof token!=="string"||!token){console.log(JSON.stringify({error:"CodeBuddy 登录文件中没有访问令牌，请重新登录。"}));return;}const acc=d.account||{};const cred={token,uid:acc.uid||"",enterpriseId:acc.enterpriseId||"",enterpriseName:acc.enterpriseName||"",userName:acc.enterpriseUserName||acc.displayName||acc.nickname||"",accountType:acc.type||"",domain:(d.auth&&d.auth.domain)||"www.codebuddy.cn"};function requestPost(urlPath,body){return new Promise((resolve,reject)=>{const data=JSON.stringify(body||{});const req=https.request({hostname:"copilot.tencent.com",path:urlPath,method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+cred.token,"X-User-Id":cred.uid,"X-Enterprise-Id":cred.enterpriseId,"X-Tenant-Id":cred.enterpriseId,"X-Domain":cred.domain,"X-Product":"SaaS","X-IDE-Name":"CodeBuddyIDE","User-Agent":"CLI/2.177.0 CodeBuddy/2.177.0"},timeout:15000},res=>{let buf="";res.on("data",c=>buf+=c);res.on("end",()=>{try{resolve({status:res.statusCode,data:JSON.parse(buf)});}catch(e){resolve({status:res.statusCode,raw:buf});}});});req.on("error",reject);req.on("timeout",()=>{req.destroy();reject(new Error("网络请求超时"));});req.write(data);req.end();});}let res=null;if(cred.enterpriseId){try{res=await requestPost("/billing/meter/get-enterprise-user-usage",{});}catch(_){}}const rData=res&&res.data&&res.data.data;if(rData&&typeof rData.credit==="number"){const limit=typeof rData.limitNum==="number"?rData.limitNum:0;const used=Math.round(rData.credit*10)/10;const left=limit===-1?null:Math.max(0,Math.round((limit-used)*10)/10);const remainingPercent=limit>0?Math.max(0,Math.min(100,Math.round((left/limit)*1000)/10)):limit===-1?100:0;const usedPercent=limit>0?Math.max(0,Math.min(100,Math.round((used/limit)*1000)/10)):0;let resetsAt=null;if(rData.cycleResetTime||rData.cycleEndTime){const parsed=Date.parse((rData.cycleResetTime||rData.cycleEndTime).replace(/-/g,"/"));if(!isNaN(parsed)) resetsAt=parsed;}console.log(JSON.stringify({ok:true,enterpriseName:cred.enterpriseName,userName:cred.userName,accountType:cred.accountType,uid:cred.uid,limitNum:limit,used,left,remainingPercent,usedPercent,cycleStartTime:rData.cycleStartTime,cycleEndTime:rData.cycleEndTime,resetsAt,fetchedAt:Date.now()}));return;}const sumRes=await requestPost("/billing/meter/get-user-resource-summary",{});const sData=sumRes&&sumRes.data&&sumRes.data.data;if(sData){console.log(JSON.stringify({ok:true,enterpriseName:cred.enterpriseName,userName:cred.userName,accountType:cred.accountType,uid:cred.uid,limitNum:null,used:0,left:null,remainingPercent:100,usedPercent:0,packages:sData.Packages||[],fetchedAt:Date.now()}));return;}console.log(JSON.stringify({error:res?.data?.msg||"查询 CodeBuddy 额度失败"}));}catch(err){console.log(JSON.stringify({error:err.message||String(err)}));}})();';
 
     try {
       const res = await ctx.bridge.invoke("plugin_exec_run", {
@@ -724,6 +753,7 @@ export default function activate(ctx) {
   }
 
   function preserveQuotaAfterFailure(result, previous) {
+    if (result?.clearPrevious) return result;
     if (result && !result.error) return result;
     if (previous && !previous.error) {
       return {
@@ -734,91 +764,199 @@ export default function activate(ctx) {
     return result || { error: "查询失败" };
   }
 
-  // ── 并行抓取模型配额与用量 ──────────────────────────────────────────────────
-  async function fetchQuota(force = false) {
-    if (isFetching) return;
-    isFetching = true;
-    fetchError = null;
+  const requestQuota = (request) => ctx.bridge.invoke("plugin_http_request", request);
+  const hostQuota = (provider) => ({
+    connect: true,
+    manualOnly: true,
+    fetch: () => fetchHostQuota(ctx.limits?.get, provider),
+    render: renderQuotaWindows,
+  });
+  const services = {
+    gemini: {
+      name: "Gemini", detail: "Antigravity 配额", icon: GeminiIcon,
+      fetch: fetchGeminiQuota,
+      render: (data, cfg) => renderModelCards("Gemini", GeminiIcon, data, cfg),
+    },
+    codex: {
+      name: "Codex", detail: "ChatGPT 订阅配额", icon: OpenAiIcon,
+      fetch: fetchCodexQuota,
+      render: (data, cfg) => renderModelCards("Codex (ChatGPT)", OpenAiIcon, data, cfg),
+    },
+    codebuddy: {
+      name: "CodeBuddy", detail: "账号积分", icon: CodeBuddyIcon,
+      fetch: fetchCodeBuddyQuota,
+      render: (data, cfg) => renderCodeBuddyCards("CodeBuddy", CodeBuddyIcon, data, cfg),
+    },
+    opencode: {
+      name: "OpenCode", detail: "Go 配额与 Console 预算", icon: OpenCodeIcon,
+      connect: true, autoLocal: true, channel: "opencode-go",
+      fetch: (connection) => {
+        if (connection.mode === "channel") return fetchHostQuota(ctx.limits?.get, "opencode-go");
+        if (connection.mode === "go") return fetchOpenCodeGo(requestQuota, connection);
+        return fetchOpenCodeLimits(requestQuota, connection);
+      },
+      render: renderQuotaWindows,
+    },
+    grok: {
+      name: "Grok", detail: "xAI API 团队额度", icon: GrokIcon,
+      connect: true, fetch: (connection) => fetchGrokBilling(requestQuota, connection),
+      render: (data) => renderGrokCards(data),
+    },
+    glm: {
+      name: "GLM 编码套餐", tabLabel: "GLM", detail: "智谱 / Z.AI 订阅配额", icon: GlmIcon,
+      connect: true, channel: "glm", fetch: (connection) => connection.mode === "channel"
+        ? fetchHostQuota(ctx.limits?.get, "glm") : fetchGlmQuota(requestQuota, connection),
+      render: renderQuotaWindows,
+    },
+    kimi: {
+      name: "Kimi Coding", tabLabel: "Kimi", detail: "Kimi Code 套餐配额", icon: KimiIcon,
+      connect: true, channel: "kimi", fetch: (connection) => connection.mode === "channel"
+        ? fetchHostQuota(ctx.limits?.get, "kimi") : fetchKimiQuota(requestQuota, connection),
+      render: renderQuotaWindows,
+    },
+    claude: {
+      name: "Claude 订阅", detail: "Claude Code 登录账号", icon: ClaudeSubscriptionIcon,
+      cli: "Claude Code", ...hostQuota("claude"),
+    },
+    "grok-subscription": {
+      name: "Grok 订阅", detail: "Grok Build 编码配额", icon: GrokIcon,
+      cli: "Grok Build", ...hostQuota("grok"),
+    },
+  };
+  const knownServiceIds = Object.keys(services);
+
+  function serviceForEngine(engine) {
+    if (engine === "omp" || engine === "agy") return "gemini";
+    if (engine === "grok" && !visibleServices.includes("grok")) return "grok-subscription";
+    return knownServiceIds.includes(engine) ? engine : null;
+  }
+
+  function legacyCacheData(cache = cachedData) {
+    return Object.fromEntries(
+      ["gemini", "codex", "codebuddy", "fetchedAt", "usageStats"]
+        .filter((key) => cache && Object.hasOwn(cache, key))
+        .map((key) => [key, cache[key]]),
+    );
+  }
+
+  function persistCache() {
+    const legacyData = legacyCacheData();
+    cacheWrite = cacheWrite.then(async () => {
+      if (!disposed) await ctx.storage.set("cached_quota", legacyData);
+    }).catch(() => {
+      if (!disposed) console.warn("[ai-quota-monitor] 无法保存配额缓存");
+    });
+  }
+
+  function fetchProvider(id) {
+    if (disposed || ctx.host?.isWeb || !visibleServices.includes(id)) return Promise.resolve(false);
+    if (pending.has(id)) return pending.get(id);
+    const service = services[id];
+    const connection = connections.get(id);
+    if (service.connect && !connection) return Promise.resolve(false);
+
+    const task = Promise.resolve().then(() => service.fetch(connection))
+      .catch(() => ({ error: "查询失败，请稍后重试。" }))
+      .then((result) => {
+        if (disposed || !visibleServices.includes(id) || connections.get(id) !== connection) return false;
+        const value = preserveQuotaAfterFailure(result, cachedData?.[id]);
+        const fresh = !value.error && !value.refreshError;
+        cachedData = {
+          ...cachedData,
+          [id]: value,
+          ...(fresh && !service.connect ? { fetchedAt: value.fetchedAt } : {}),
+        };
+        if (!service.connect) void persistCache();
+        return fresh && !value.notice;
+      }).finally(() => {
+        if (pending.get(id) === task) pending.delete(id);
+        if (!disposed) notifySubscribers();
+      });
+    pending.set(id, task);
     notifySubscribers();
+    return task;
+  }
 
+  async function fetchQuota(manual = false) {
+    if (!initialized || disposed || ctx.host?.isWeb) return;
+    const ids = visibleServices.filter((id) => {
+      if (manual) return true;
+      const connection = connections.get(id);
+      return !services[id].manualOnly && connection?.mode !== "channel"
+        && !(connection?.detected && cachedData?.[id]?.error);
+    });
+    await Promise.all([...ids.map(fetchProvider), fetchUsageOnly()]);
+    if (disposed || !cachedData) return;
     try {
-      const [geminiResult, codexResult, codebuddyResult, usageStatsResult] = await Promise.all([
-        fetchGeminiQuota(),
-        fetchCodexQuota(),
-        fetchCodeBuddyQuota(),
-        fetchLocalUsageStats(),
-      ]);
-
-      const hasFreshResult =
-        (geminiResult && !geminiResult.error) ||
-        (codexResult && !codexResult.error) ||
-        (codebuddyResult && !codebuddyResult.error) ||
-        Boolean(usageStatsResult);
-      const merged = {
-        fetchedAt: hasFreshResult ? Date.now() : cachedData ? cachedData.fetchedAt : null,
-        gemini: preserveQuotaAfterFailure(geminiResult, cachedData && cachedData.gemini),
-        codex: preserveQuotaAfterFailure(codexResult, cachedData && cachedData.codex),
-        codebuddy: preserveQuotaAfterFailure(codebuddyResult, cachedData && cachedData.codebuddy),
-        usageStats: usageStatsResult || (cachedData && cachedData.usageStats) || null,
-      };
-      cachedData = merged;
-      fetchError = null;
-      await ctx.storage.set("cached_quota", merged);
-
-      try {
-        ctx.events.emit(`plugin:${ctx.pluginId}:updated`, merged);
-      } catch (e) {
-        console.warn("[gemini-quota] events.emit error:", e);
-      }
-    } catch (err) {
-      console.error("[gemini-quota] 获取配额失败:", err);
-      fetchError = err.message || String(err);
-    } finally {
-      isFetching = false;
-      notifySubscribers();
+      ctx.events.emit(`plugin:${ctx.pluginId}:updated`, legacyCacheData());
+    } catch {
+      // Unload may revoke the event capability while a lookup finishes.
     }
   }
 
-  // ── 单独刷新用量统计 (不调用任何配额接口) ────────────────────────────────────
   async function fetchUsageOnly() {
-    if (isFetchingUsage) return;
+    if (disposed || ctx.host?.isWeb || isFetchingUsage) return false;
     isFetchingUsage = true;
     notifySubscribers();
-
     try {
-      const usageStatsResult = await fetchLocalUsageStats();
-      if (usageStatsResult && !usageStatsResult.error) {
-        cachedData = {
-          ...(cachedData || {}),
-          usageStats: usageStatsResult,
-        };
-        await ctx.storage.set("cached_quota", cachedData);
-      }
-    } catch (err) {
-      console.warn("[ai-quota-monitor] fetchUsageOnly failed:", err);
+      const result = await fetchLocalUsageStats();
+      if (!result || result.error || disposed) return false;
+      cachedData = { ...cachedData, usageStats: result };
+      void persistCache();
+      return true;
     } finally {
       isFetchingUsage = false;
-      notifySubscribers();
+      if (!disposed) notifySubscribers();
     }
   }
 
-  // ── 自定义 Hook 订阅状态 ────────────────────────────────────────────────────
-  function useQuotaState() {
-    const [state, setState] = useState(() => ({
-      data: cachedData,
-      loading: isFetching,
-      usageLoading: isFetchingUsage,
-      error: fetchError,
-      activeEngine,
-    }));
+  function disconnectService(id) {
+    connections.delete(id);
+    pending.delete(id);
+    if (cachedData && services[id].connect) {
+      const { [id]: removed, ...remaining } = cachedData;
+      cachedData = remaining;
+    }
+  }
 
+  function connectService(id, connection) {
+    disconnectService(id);
+    connections.set(id, connection);
+    return fetchProvider(id);
+  }
+
+  function probeLocalService(id) {
+    if (!services[id]?.autoLocal || !probeOpenCode || ctx.host?.isWeb || !visibleServices.includes(id) || connections.has(id)) return;
+    void connectService(id, { mode: "local", detected: true });
+  }
+
+  async function saveVisibleServices(selection) {
+    const next = normalizeVisibleServices(selection, knownServiceIds);
+    await ctx.storage.set("visible_quota_services", next);
+    if (disposed) return;
+    const added = next.filter((id) => !visibleServices.includes(id));
+    for (const id of visibleServices) {
+      if (!next.includes(id) && services[id].connect) {
+        disconnectService(id);
+        if (services[id].autoLocal) probeOpenCode = true;
+      }
+    }
+    visibleServices = next;
+    preferredService = resolveService(next, preferredService, serviceForEngine(activeEngine));
+    notifySubscribers();
+    for (const id of added) {
+      if (!services[id].connect && autoRefreshMinutes() > 0) void fetchProvider(id);
+    }
+    probeLocalService(preferredService);
+  }
+
+  function useQuotaState() {
+    const [state, setState] = useState(quotaSnapshot);
     useEffect(() => {
       subscribers.add(setState);
-      return () => {
-        subscribers.delete(setState);
-      };
+      setState(quotaSnapshot());
+      return () => { subscribers.delete(setState); };
     }, []);
-
     return state;
   }
 
@@ -1744,486 +1882,437 @@ export default function activate(ctx) {
     );
   }
   // ── 弹出详情弹框组件 (单模型看板 Popover Modal) ───────────────────────────
-  function QuotaPopover({ data, loading, usageLoading, error, activeEngine, onClose }) {
-    function resolveInitialTab(engine) {
-      if (engine === "codebuddy") return "codebuddy";
-      if (engine === "codex") return "codex";
-      if (engine === "omp" || engine === "agy" || engine === "gemini") return "gemini";
-      if (data && data.codebuddy && !data.codebuddy.error) return "codebuddy";
-      if (data && data.gemini && !data.gemini.error) return "gemini";
-      if (data && data.codex && !data.codex.error) return "codex";
-      return "gemini";
-    }
-
-    const [viewMode, setViewMode] = useState("quota"); // "quota" | "usage"
-    const [activeTab, setActiveTab] = useState(() => resolveInitialTab(activeEngine));
-    const [usageRange, setUsageRange] = useState("today"); // 默认展示日的
-    const [selectedProvider, setSelectedProvider] = useState("全部");
-    const [config, setConfig] = useState({});
-    useEffect(() => {
-      setActiveTab(resolveInitialTab(activeEngine));
-    }, [activeEngine]);
-
-    useEffect(() => {
-      ctx.storage.get("config").then((c) => setConfig(c || {}));
-    }, []);
-
-    useEffect(() => {
-      const handleKey = (e) => {
-        if (e.key === "Escape") onClose();
-      };
-      window.addEventListener("keydown", handleKey);
-      return () => window.removeEventListener("keydown", handleKey);
-    }, [onClose]);
-
-    const gemini = data && data.gemini;
-    const codex = data && data.codex;
-    const codebuddy = data && data.codebuddy;
-
-    return h(
-      "div",
-      null,
-      // 透明遮罩
-      h("div", {
-        className: "gqc-popover-backdrop",
-        onClick: (e) => {
-          e.stopPropagation();
-          onClose();
-        },
-      }),
-      // 弹框卡片
-      h(
-        "div",
-        {
-          className: `gqc-popover ${viewMode === "quota" ? "is-quota" : "is-usage"}`,
-          onClick: (e) => e.stopPropagation(),
-        },
-        // 顶部操作栏
-        h(
-          "div",
-          {
-            style: {
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              borderBottom: "1px solid var(--color-separator-border, rgba(128, 128, 128, 0.15))",
-              paddingBottom: "8px",
-            },
-          },
-          h(
-            "div",
-            { style: { display: "flex", alignItems: "center", gap: "6px" } },
-            viewMode === "usage"
-              ? h(StatsIcon, { size: 14, style: { color: "#16a34a" } })
-              : activeTab === "codebuddy"
-                ? h(CodeBuddyIcon, { size: 14 })
-                : activeTab === "codex"
-                  ? h(OpenAiIcon, { size: 14, style: { color: "var(--color-text-primary, #18181b)" } })
-                  : h(GeminiIcon, { size: 14 }),
-            h(
-              "span",
-              { style: { fontWeight: 600, fontSize: "13px", color: "var(--color-text-primary, #18181b)" } },
-              viewMode === "usage"
-                ? "AI 使用与成本统计"
-                : activeTab === "codebuddy"
-                  ? "CodeBuddy 积分看板"
-                  : activeTab === "codex"
-                    ? "Codex 配额看板"
-                    : "Gemini 配额看板"
-            )
+  function renderQuotaWindows(data, config) {
+    return h("div", { className: "gqc-quota-stack" },
+      data.windows.map((window) => {
+        const remaining = Math.round(window.remaining);
+        return h("div", { key: window.id, className: "gqc-popover-card" },
+          h("div", { className: "gqc-quota-metric" },
+            h("strong", null, window.label),
+            h("strong", { style: { color: getToneColor(getStatusTone(remaining, config.warningThreshold)) } }, remaining + "%"),
           ),
-          h(
-            "div",
-            { style: { display: "flex", alignItems: "center", gap: "6px" } },
-            h(
-              "div",
-              { className: "gqc-header-switcher" },
-              h(
-                "button",
-                {
-                  type: "button",
-                  className: `gqc-header-switch-btn${viewMode === "quota" ? " is-active" : ""}`,
-                  onClick: () => setViewMode("quota"),
-                },
-                "配额"
-              ),
-              h(
-                "button",
-                {
-                  type: "button",
-                  className: `gqc-header-switch-btn${viewMode === "usage" ? " is-active" : ""}`,
-                  onClick: () => setViewMode("usage"),
-                },
-                "用量"
-              )
-            ),
-            h(
-              "button",
-              {
-                type: "button",
-                className: "gqc-icon-button",
-                title: viewMode === "usage" ? "仅刷新用量统计 (不刷新配额)" : "立即刷新全部配额与Token用量",
-                disabled: viewMode === "usage" ? usageLoading : loading,
-                onClick: () => {
-                  if (viewMode === "usage") {
-                    void fetchUsageOnly();
-                  } else {
-                    void fetchQuota(true);
-                  }
-                },
-              },
-              h(RefreshIcon, { spinning: viewMode === "usage" ? usageLoading : loading, size: 13 })
-            ),
-            h(
-              "button",
-              {
-                type: "button",
-                className: "gqc-icon-button",
-                title: "关闭",
-                onClick: onClose,
-              },
-              h(CloseIcon, { size: 13 })
-            )
-          )
-        ),
-
-        // 模型筛选切换 Tab（仅保留单模型看板）
-        viewMode === "usage"
-          ? renderUsageStatsView(
-              data && data.usageStats,
-              loading,
-              usageLoading,
-              config,
-              usageRange,
-              setUsageRange,
-              () => void fetchUsageOnly(),
-              selectedProvider,
-              setSelectedProvider
-            )
-          : h(
-              "div",
-              { key: "quota-view", style: { display: "flex", flexDirection: "column", gap: "10px" } },
-              // 模型筛选切换 Tab（仅保留单模型看板）
-              h(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    gap: "4px",
-                    background: "var(--color-background-secondary-default, rgba(128, 128, 128, 0.06))",
-                    padding: "2px",
-                    borderRadius: "6px",
-                  },
-                },
-                h(
-                  "button",
-                  {
-                    type: "button",
-                    className: `gqc-tab-btn${activeTab === "gemini" ? " is-active" : ""}`,
-                    style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
-                    onClick: () => setActiveTab("gemini"),
-                  },
-                  h(GeminiIcon, { size: 12 }),
-                  "Gemini"
-                ),
-                h(
-                  "button",
-                  {
-                    type: "button",
-                    className: `gqc-tab-btn${activeTab === "codex" ? " is-active" : ""}`,
-                    style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
-                    onClick: () => setActiveTab("codex"),
-                  },
-                  h(OpenAiIcon, { size: 12, style: { color: "currentColor" } }),
-                  "Codex"
-                ),
-                h(
-                  "button",
-                  {
-                    type: "button",
-                    className: `gqc-tab-btn${activeTab === "codebuddy" ? " is-active" : ""}`,
-                    style: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" },
-                    onClick: () => setActiveTab("codebuddy"),
-                  },
-                  h(CodeBuddyIcon, { size: 12 }),
-                  "CodeBuddy"
-                )
-              ),
-
-              // 全局错误提示（如有）
-              error
-                ? h(
-                    "div",
-                    {
-                      style: {
-                        padding: "8px 10px",
-                        borderRadius: "6px",
-                        background: "rgba(220, 38, 38, 0.08)",
-                        border: "1px solid rgba(220, 38, 38, 0.2)",
-                        color: "#dc2626",
-                        fontSize: "11px",
-                        lineHeight: "1.4",
-                      },
-                    },
-                    error
-                  )
-                : null,
-
-              // 额度刷新时间提示条
-              h(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    fontSize: "11px",
-                    color: "var(--color-text-secondary, #71717a)",
-                    padding: "4px 8px",
-                    borderRadius: "6px",
-                    background: "var(--color-background-secondary-default, rgba(128, 128, 128, 0.05))",
-                    border: "1px solid var(--color-separator-border, rgba(128, 128, 128, 0.12))",
-                  },
-                },
-                h(
-                  "span",
-                  { style: { display: "inline-flex", alignItems: "center", gap: "4px" } },
-                  h("span", { style: { color: "var(--color-text-tertiary, #9ca3af)" } }, "🕒 刷新时间:"),
-                  h("b", { style: { color: "var(--color-text-primary, #18181b)", fontWeight: 600 } }, formatRefreshTime(data ? data.fetchedAt : null))
-                ),
-                loading
-                  ? h(
-                      "span",
-                      { style: { color: "#0284c7", display: "inline-flex", alignItems: "center", gap: "3px", fontWeight: 500 } },
-                      h(RefreshIcon, { spinning: true, size: 11 }),
-                      "刷新中…"
-                    )
-                  : h("span", { style: { color: "var(--color-text-tertiary, #a1a1aa)", fontSize: "10px" } }, `每 ${config.autoRefreshMinutes || 30}m 自动刷新`)
-              ),
-
-              // 单个看板视图（独立展示，不再叠放全部）
-              activeTab === "gemini"
-                ? renderModelCards("Gemini", GeminiIcon, gemini, config)
-                : null,
-              activeTab === "codex"
-                ? renderModelCards("Codex (ChatGPT)", OpenAiIcon, codex, config)
-                : null,
-              activeTab === "codebuddy"
-                ? renderCodeBuddyCards("CodeBuddy", CodeBuddyIcon, codebuddy, config)
-                : null,
-
-              // 底部机制小贴士
-              h(
-                "div",
-                {
-                  style: {
-                    fontSize: "10px",
-                    lineHeight: "1.4",
-                    color: "var(--color-text-tertiary, #a1a1aa)",
-                    borderTop: "1px solid var(--color-separator-border, rgba(128, 128, 128, 0.15))",
-                    paddingTop: "6px",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  },
-                },
-                activeTab === "codebuddy"
-                  ? "💡 积分按月周期结算，各模型消耗由任务与上下文决定。"
-                  : activeTab === "codex"
-                    ? "💡 包含 5 小时短周期与周限，高级套餐支持月度额度券重置。"
-                    : "💡 采用 5H 短周期平滑突发，7D 周限控制总额度。"
-              )
-            )
-      )
+          h("div", { className: "gqc-progress-track", role: "progressbar",
+            "aria-label": window.label + "剩余", "aria-valuenow": remaining },
+            h("div", { className: "gqc-progress-bar", style: {
+              width: remaining + "%", background: getToneColor(getStatusTone(remaining, config.warningThreshold)),
+            } }),
+          ),
+          h("span", { className: "gqc-quota-muted" }, window.resetsAt
+            ? "重置于 " + formatExactDate(window.resetsAt)
+            : "暂未提供重置时间"),
+        );
+      }),
+      data.budgets?.length > 0 && h("div", { className: "gqc-popover-card" },
+        h("strong", null, "Console 预算"),
+        data.budgets.map((budget) => h("div", { key: budget.id, className: "gqc-quota-metric" },
+          h("span", null, budget.modelScoped ? "单模型预算" : "预算组",
+            budget.resetsAt ? " · " + formatExactDate(budget.resetsAt) + " 重置" : ""),
+          h("strong", null, budget.modelScoped
+            ? "每模型 " + formatUsd(budget.limit)
+            : formatUsd(budget.spent) + " / " + formatUsd(budget.limit)),
+        )),
+      ),
     );
   }
 
-  // ── 1. 状态栏小部件 (带品牌图标，智能感知当前会话) ─────────────────────────
-  function StatusBarChip() {
-    const { data, loading, usageLoading, error, activeEngine } = useQuotaState();
-    const [config, setConfig] = useState(null);
-    const [showPopover, setShowPopover] = useState(false);
+  function formatUsd(value) {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+  }
 
+  function renderGrokCards(data) {
+    return h("div", { className: "gqc-quota-stack" },
+      [["预付余额", data.balance], ["后付费月度上限", data.postpaidLimit]].map(([label, value]) =>
+        h("div", { key: label, className: "gqc-popover-card gqc-quota-metric" },
+          h("strong", null, label),
+          h("strong", null, value === null ? "不可用" : formatUsd(value)),
+        ),
+      ),
+      data.notice && h("p", { className: "gqc-quota-message", role: "status" }, data.notice),
+    );
+  }
+
+  function ManageServices({ visibleIds, onClose }) {
+    const [selected, setSelected] = useState(visibleIds);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const firstOption = useRef(null);
+    const hintId = useId();
+    const atLimit = selected.length >= MAX_VISIBLE_QUOTA_SERVICES;
+    const firstEnabledId = atLimit ? knownServiceIds.find((id) => selected.includes(id)) : knownServiceIds[0];
+    useEffect(() => { firstOption.current?.focus(); }, []);
+
+    async function save(event) {
+      event.preventDefault();
+      if (saving) return;
+      setSaving(true);
+      setError(null);
+      try {
+        await saveVisibleServices(selected);
+        onClose();
+      } catch {
+        setSaving(false);
+        setError("无法保存展示设置，请重试。");
+      }
+    }
+
+    return h("form", { className: "gqc-quota-stack", onSubmit: save },
+      h("p", { id: hintId, className: "gqc-quota-muted" },
+        "最多展示 " + MAX_VISIBLE_QUOTA_SERVICES + " 个服务。更换服务时，先取消一项。"),
+      h("fieldset", { className: "gqc-service-list", disabled: saving, "aria-label": "要展示的服务", "aria-describedby": hintId },
+        knownServiceIds.map((id) => {
+          const service = services[id];
+          const checked = selected.includes(id);
+          return h("label", { key: id, className: "gqc-service-row" },
+            h(service.icon, { size: 15 }),
+            h("span", { className: "gqc-service-label" },
+              h("strong", null, service.name),
+              h("span", { className: "gqc-quota-muted" }, service.detail),
+            ),
+            h("input", {
+              type: "checkbox",
+              ref: id === firstEnabledId ? firstOption : undefined,
+              checked,
+              disabled: atLimit && !checked,
+              onChange: (event) => {
+                const checked = event.target.checked;
+                setSelected((ids) => {
+                  const next = checked ? [...ids, id] : ids.filter((item) => item !== id);
+                  return normalizeVisibleServices(next, knownServiceIds);
+                });
+              },
+            }),
+          );
+        }),
+      ),
+      error && h("p", { role: "alert", className: "gqc-quota-message" }, error),
+      h("div", { className: "gqc-service-actions" },
+        h("span", { className: "gqc-quota-muted", role: "status" }, "已选 " + selected.length + " / " + MAX_VISIBLE_QUOTA_SERVICES + " 项"),
+        h("button", { type: "button", className: "gqc-service-button", onClick: onClose, disabled: saving }, "取消"),
+        h("button", { type: "submit", className: "gqc-service-button is-primary", disabled: saving }, saving ? "保存中…" : "保存"),
+      ),
+    );
+  }
+
+  function ConnectService({ id, loading }) {
+    const [error, setError] = useState(null);
+    const [mode, setMode] = useState("local");
+    const openCode = id === "opencode";
+    const local = openCode && mode === "local";
+    const teamBilling = id === "grok";
+    const regional = id === "glm";
+    const { cli, name, channel } = services[id];
+
+    if (cli) return h("div", { className: "gqc-popover-card gqc-quota-stack" },
+      h("p", { className: "gqc-quota-muted" }, "先在 " + cli + " 登录订阅账号，再连接查询。"),
+      h("div", { className: "gqc-service-actions" },
+        h("button", { type: "button", className: "gqc-service-button is-primary", disabled: loading,
+          onClick: () => connectService(id, {}) }, "连接 CLI 账号"),
+      ),
+    );
+
+    function submit(event) {
+      event.preventDefault();
+      if (loading) return;
+      const form = event.currentTarget;
+      const team = teamBilling ? form.elements.team.value.trim() : undefined;
+      const region = regional ? form.elements.region.value : undefined;
+      const inputSecret = form.elements.secret.value;
+      const secret = local ? inputSecret : inputSecret.trim();
+      if (!local && (!validQuotaSecret(secret) || (teamBilling && !validGrokTeam(team)))) {
+        setError(teamBilling ? "请检查 Team ID 和 Management API Key。" : "请输入有效的套餐 API Key。");
+        return;
+      }
+      form.reset();
+      setError(null);
+      connectService(id, { team, region, secret, mode });
+    }
+
+    const form = h("form", { className: "gqc-popover-card gqc-quota-stack", onSubmit: submit, autoComplete: "off" },
+      h("strong", null, teamBilling ? "连接 xAI API 团队" : "连接 " + name),
+      openCode && h("label", { className: "gqc-service-field" }, "连接方式",
+        h("select", { value: mode, disabled: loading, onChange: (event) => { setMode(event.target.value); setError(null); } },
+          h("option", { value: "local" }, "OpenCode 2 本地服务"),
+          h("option", { value: "go" }, "OpenCode Go API Key"))),
+      local && h("p", { className: "gqc-quota-muted" }, "在已连接 Console 的 OpenCode 中启动本地服务。",
+        h("code", { className: "gqc-service-command" }, "opencode serve --hostname 127.0.0.1 --port 4096")),
+      teamBilling && h("p", { className: "gqc-quota-muted" }, "在 xAI Console 获取 Team ID 和有账单读取权限的 Management API Key。"),
+      teamBilling && h("label", { className: "gqc-service-field" }, "Team ID",
+        h("input", { name: "team", type: "text", maxLength: 128, required: true, spellCheck: false, disabled: loading })),
+      regional && h("label", { className: "gqc-service-field" }, "套餐区域",
+        h("select", { name: "region", disabled: loading },
+          h("option", { value: "cn" }, "智谱开放平台（中国区）"),
+          h("option", { value: "global" }, "Z.AI（国际版）"))),
+      h("label", { className: "gqc-service-field" }, local ? "服务密码（如已启用）" : teamBilling ? "Management API Key" : "套餐 API Key",
+        h("input", { key: mode, name: "secret", type: "password", maxLength: 2048, required: !local,
+          autoComplete: "off", disabled: loading })),
+      error && h("p", { role: "alert", className: "gqc-quota-message" }, error),
+      h("div", { className: "gqc-service-actions" },
+        h("span", { className: "gqc-quota-muted" }, "凭据仅在本次运行中使用"),
+        h("button", { type: "submit", className: "gqc-service-button is-primary", disabled: loading }, "连接并查询"),
+      ),
+    );
+    if (!channel) return form;
+    return h("div", { className: "gqc-quota-stack" },
+      h("button", { type: "button", className: "gqc-service-button is-primary", disabled: loading,
+        onClick: () => void connectService(id, { mode: "channel", detected: true }) }, "使用 CC GUI 已配置的渠道"),
+      h("details", null, h("summary", null, openCode ? "其他连接方式" : "手动输入套餐 API Key"), form),
+    );
+  }
+
+  function ServiceDetail({ id, data, loading, connected, config }) {
+    const service = services[id];
+    if (!service.connect) return service.render(data, config);
+    const connection = connections.get(id);
+    const fallback = connected && data?.error && connection?.detected;
+    return h("div", { className: "gqc-quota-stack", "aria-busy": loading },
+      id === "grok" && h("p", { className: "gqc-quota-muted" }, "这里显示 xAI API 团队额度。个人订阅可在「管理展示」中选择 Grok 订阅。"),
+      (fallback || !connected) && h(ConnectService, { id, loading }),
+      connected && !data && loading && h("p", { className: "gqc-quota-muted", role: "status" }, "正在查询…"),
+      connected && data?.error && h("p", { role: "alert", className: "gqc-quota-message" }, data.error),
+      connected && data?.refreshError && h("p", { role: "status", className: "gqc-quota-message" }, "刷新失败，保留上次数据。 " + data.refreshError),
+      connected && data && !data.error && service.render(data, config),
+      connected && !fallback && h("div", { className: "gqc-service-actions" },
+        h("button", { type: "button", className: "gqc-service-button", onClick: () => {
+          if (service.autoLocal) probeOpenCode = false;
+          disconnectService(id);
+          notifySubscribers();
+        } }, data?.error ? "重新连接" : "断开连接")),
+    );
+  }
+
+  function RefreshButton({ busy, disabled, label, action }) {
+    const [feedback, setFeedback] = useState(null);
+    const runningTimer = useRef(null);
+    const alive = useRef(true);
     useEffect(() => {
-      ctx.storage.get("config").then((cfg) => setConfig(cfg || {}));
+      alive.current = true;
+      return () => {
+        alive.current = false;
+        clearTimeout(runningTimer.current);
+      };
     }, []);
 
-    if (config && config.showStatusBarChip === false) {
+    async function refresh() {
+      clearTimeout(runningTimer.current);
+      setFeedback("running");
+      const start = Date.now();
+      const ok = await action();
+      if (!alive.current) return;
+      runningTimer.current = setTimeout(() => {
+        setFeedback(ok ? "done" : null);
+        if (ok) runningTimer.current = setTimeout(() => setFeedback(null), 900);
+      }, Math.max(0, 600 - (Date.now() - start)));
+    }
+
+    const running = busy || feedback === "running";
+    return h("button", { type: "button", className: "gqc-icon-button", disabled: disabled || running,
+      title: feedback === "done" && !running ? "已刷新" : label, "aria-label": label, onClick: refresh },
+      feedback === "done" && !running
+        ? h("span", { className: "gqc-refresh-done", "aria-hidden": true }, "✓")
+        : h(RefreshIcon, { spinning: running, size: 13 }),
+    );
+  }
+
+  function QuotaPopover({ state, initialService, onClose }) {
+    const { data, loading, usageLoading, pendingIds, connectedIds, visibleServices, preferredService, config, initialized } = state;
+    const [viewMode, setViewMode] = useState("quota");
+    const [managing, setManaging] = useState(false);
+    const [usageRange, setUsageRange] = useState("today");
+    const [selectedUsageProvider, setSelectedUsageProvider] = useState("全部");
+    const tabGroupId = useId();
+    const selectedTab = useRef(null);
+    const manageButton = useRef(null);
+    const forceFocusManage = useRef(false);
+    const selectedId = resolveService(visibleServices, preferredService, initialService);
+    const service = selectedId ? services[selectedId] : null;
+    const modelData = selectedId ? data?.[selectedId] : null;
+    const serviceLoading = pendingIds.includes(selectedId);
+    const interval = autoRefreshMinutes();
+
+    function finishManage() {
+      forceFocusManage.current = true;
+      setManaging(false);
+    }
+
+    useEffect(() => { (selectedTab.current ?? manageButton.current)?.focus(); }, []);
+    useEffect(() => {
+      if (!managing && forceFocusManage.current) {
+        forceFocusManage.current = false;
+        manageButton.current?.focus();
+      }
+    }, [managing]);
+    useEffect(() => {
+      function onEscape(event) {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        if (managing) finishManage();
+        else onClose();
+      }
+      window.addEventListener("keydown", onEscape);
+      return () => window.removeEventListener("keydown", onEscape);
+    }, [managing, onClose]);
+
+    function onTabKeyDown(event) {
+      const tabs = [...event.currentTarget.querySelectorAll('[role="tab"]')];
+      const index = tabs.indexOf(event.target);
+      if (index === -1) return;
+      const last = tabs.length - 1;
+      const next = {
+        ArrowLeft: index === 0 ? last : index - 1,
+        ArrowRight: index === last ? 0 : index + 1,
+        Home: 0,
+        End: last,
+      }[event.key];
+      if (!Number.isInteger(next)) return;
+      event.preventDefault();
+      const nextId = visibleServices[next];
+      chooseService(nextId);
+      probeLocalService(nextId);
+      tabs[next].focus();
+    }
+
+    return h("div", null,
+      h("div", { className: "gqc-popover-backdrop", onClick: (event) => { event.stopPropagation(); onClose(); } }),
+      h("div", { className: "gqc-popover " + (viewMode === "usage" ? "is-usage" : "is-quota"),
+        role: "dialog", "aria-label": managing ? "管理展示" : "AI 配额与用量", onClick: (event) => event.stopPropagation() },
+        h("div", { className: "gqc-quota-header" },
+          h("strong", null, managing ? "管理展示" : viewMode === "usage" ? "AI 使用与成本" : "AI 配额"),
+          h("div", { className: "gqc-quota-tools" },
+            !managing && h("div", { className: "gqc-header-switcher", role: "group", "aria-label": "看板类型" },
+              [["quota", "配额"], ["usage", "用量"]].map(([mode, label]) => h("button", { key: mode, type: "button",
+                className: "gqc-header-switch-btn" + (viewMode === mode ? " is-active" : ""),
+                "aria-pressed": viewMode === mode, onClick: () => setViewMode(mode),
+              }, label)),
+            ),
+            !managing && (viewMode === "usage"
+              ? h(RefreshButton, { key: "usage", busy: usageLoading, label: "刷新用量统计", action: fetchUsageOnly })
+              : h(RefreshButton, { key: selectedId, busy: serviceLoading, label: "刷新当前服务",
+                disabled: !selectedId || (service.connect && !connectedIds.includes(selectedId)), action: () => fetchProvider(selectedId) })),
+            h("button", { type: "button", className: "gqc-icon-button", title: "关闭", "aria-label": "关闭看板", onClick: onClose },
+              h(CloseIcon, { size: 13 })),
+          ),
+        ),
+        managing ? h(ManageServices, { visibleIds: visibleServices, onClose: finishManage })
+          : viewMode === "usage"
+            ? renderUsageStatsView(data?.usageStats, loading, usageLoading, config, usageRange, setUsageRange,
+                () => void fetchUsageOnly(), selectedUsageProvider, setSelectedUsageProvider)
+            : h("div", { className: "gqc-quota-stack" },
+                service && h("div", { className: "gqc-service-tabs", role: "tablist", "aria-label": "配额服务",
+                  onKeyDown: onTabKeyDown }, visibleServices.map((id) => {
+                  const item = services[id];
+                  const active = id === selectedId;
+                  return h("button", { key: id, id: tabGroupId + "-tab-" + id, type: "button", role: "tab",
+                    className: "gqc-tab-btn" + (active ? " is-active" : ""),
+                    "aria-selected": active, "aria-controls": tabGroupId + "-panel-" + id,
+                    title: item.name, "aria-label": item.name, tabIndex: active ? 0 : -1,
+                    ref: active ? selectedTab : null, onClick: () => { chooseService(id); probeLocalService(id); },
+                  }, h("span", { className: "gqc-tab-icon", "aria-hidden": true }, h(item.icon, { size: 12 })),
+                    h("span", { className: "gqc-tab-label" }, item.tabLabel ?? item.name));
+                })),
+                h("div", { className: "gqc-service-toolbar" },
+                  service && h("div", { className: "gqc-quota-refresh-line", role: "status" },
+                    h("span", null, modelData?.fetchedAt ? "更新于 " + formatRefreshTime(modelData.fetchedAt) : "尚未更新"),
+                    h("span", null, serviceLoading ? "刷新中…" : service.connect && (!connectedIds.includes(selectedId) || modelData?.error) ? "等待连接" :
+                      service.manualOnly || connections.get(selectedId)?.mode === "channel" ? "手动刷新" : interval > 0 ? "每 " + interval + " 分钟刷新" : "自动刷新已关闭"),
+                  ),
+                  h("button", { ref: manageButton, type: "button", className: "gqc-service-button",
+                    onClick: () => setManaging(true), disabled: !initialized }, "管理展示"),
+                ),
+                service ? visibleServices.map((id) => h("div", {
+                  key: id, id: tabGroupId + "-panel-" + id, role: "tabpanel",
+                  "aria-labelledby": tabGroupId + "-tab-" + id, hidden: id !== selectedId, tabIndex: 0,
+                }, id === selectedId && h(ServiceDetail, {
+                  id, data: modelData, loading: serviceLoading, config, connected: connectedIds.includes(id),
+                }))) : h("div", { className: "gqc-quota-empty" },
+                  h("strong", null, initialized ? "还没有展示的服务" : "正在读取展示设置…"),
+                  initialized && h("span", { className: "gqc-quota-muted" }, "通过「管理展示」选择要关注的服务。"),
+                ),
+              ),
+      ),
+    );
+  }
+
+  function chooseService(id) {
+    preferredService = id;
+    notifySubscribers();
+  }
+
+  function quotaSummary(id, data, mode) {
+    if (!data || data.error) return null;
+    if (id === "grok") {
+      if (Number.isFinite(data.balance)) return { label: "余额", display: formatUsd(data.balance) };
+      if (Number.isFinite(data.postpaidLimit)) return { label: "月限", display: formatUsd(data.postpaidLimit) };
       return null;
     }
-
-    const gemini = data && data.gemini;
-    const codex = data && data.codex;
-
-    const gW = gemini && gemini.weekly;
-    const g5 = gemini && gemini.h5;
-    const cW = codex && codex.weekly;
-    const c5 = codex && codex.h5;
-
-    const mode = (config && config.statusBarDisplay) || "auto";
-
-    // 智能决策当前应该聚焦哪个模型
-    let target = mode;
-    if (mode === "auto") {
-      if (activeEngine === "codebuddy") {
-        target = "codebuddy";
-      } else if (activeEngine === "codex") {
-        target = "codex";
-      } else if (activeEngine === "omp" || activeEngine === "agy" || activeEngine === "gemini") {
-        target = "gemini";
-      } else {
-        target = "overview";
-      }
+    if (Array.isArray(data.windows)) {
+      const meter = data.windows.find((item) => item.id === "weekly" || item.id === "seven_day") ?? data.windows[0];
+      return meter ? { label: meter.shortLabel, display: Math.round(meter.remaining) + "%", percent: meter.remaining } : null;
     }
-
-    const codebuddy = data && data.codebuddy;
-    const cb = codebuddy;
-
-    // 计算当前显示目标的警示色
-    const refreshedModel = target === "gemini" ? gemini : target === "codex" ? codex : target === "codebuddy" ? codebuddy : null;
-    const refreshTimestamp = refreshedModel ? refreshedModel.fetchedAt : data && data.fetchedAt;
-    const refreshTip = refreshTimestamp ? `\n刷新时间: ${formatRefreshTime(refreshTimestamp)}` : "";
-    let tone = "safe";
-    let titleTip = `点击展开详细配额与积分看板${refreshTip}`;
-    if (target === "codebuddy" && cb && !cb.error) {
-      tone = cb.limitNum === -1 ? "safe" : getStatusTone(cb.remainingPercent, config && config.warningThreshold);
-      const limitText = cb.limitNum === -1 ? "不限额" : `${cb.limitNum} 积分`;
-      titleTip = `CodeBuddy (当前会话) · 剩余: ${cb.left !== null ? cb.left : "不限"} / ${limitText} (${cb.remainingPercent}%)${refreshTip} · 点击展开看板`;
-    } else if (target === "gemini" && gW) {
-      const minRem = g5 ? Math.min(gW.remaining, g5.remaining) : gW.remaining;
-      tone = getStatusTone(minRem, config && config.warningThreshold);
-      titleTip = `Gemini (当前会话) · 7D: ${gW.remaining}% | 5H: ${g5 ? g5.remaining : "--"}%${refreshTip} · 点击展开看板`;
-    } else if (target === "codex" && cW) {
-      const minRem = c5 ? Math.min(cW.remaining, c5.remaining) : cW.remaining;
-      tone = getStatusTone(minRem, config && config.warningThreshold);
-      titleTip = `Codex (当前会话) · 7D: ${cW.remaining}% | 5H: ${c5 ? c5.remaining : "--"}%${refreshTip} · 点击展开看板`;
-    } else {
-      const validRems = [
-        gW && gW.remaining,
-        g5 && g5.remaining,
-        cW && cW.remaining,
-        c5 && c5.remaining,
-        cb && !cb.error && typeof cb.remainingPercent === "number" ? cb.remainingPercent : null,
-      ].filter((v) => typeof v === "number");
-      const minRem = validRems.length > 0 ? Math.min(...validRems) : 100;
-      tone = getStatusTone(minRem, config && config.warningThreshold);
+    if (id === "codebuddy") {
+      if (data.limitNum === -1) return { label: "积分", display: "不限" };
+      if (!Number.isFinite(data.remainingPercent)) return null;
+      return { label: "积分", display: data.remainingPercent + "%", percent: data.remainingPercent };
     }
-
-    if (error && !data) tone = "danger";
-    const showingStaleData =
-      target === "gemini"
-        ? Boolean(gemini && gemini.refreshError)
-        : target === "codex"
-          ? Boolean(codex && codex.refreshError)
-          : target === "codebuddy"
-            ? Boolean(codebuddy && codebuddy.refreshError)
-            : Boolean((gemini && gemini.refreshError) || (codex && codex.refreshError) || (codebuddy && codebuddy.refreshError));
-    if (showingStaleData) titleTip += " · 查询失败，显示上次成功数据";
-
-    const children = [];
-
-    if (loading && !data) {
-      children.push(h("span", { key: "loading", style: { color: "var(--color-text-tertiary, #a1a1aa)" } }, "加载中…"));
-    } else if (target === "codebuddy" && cb && !cb.error) {
-      children.push(
-        h(
-          "span",
-          { key: "cb-grp", className: "gqc-chip-group" },
-          h(CodeBuddyIcon, { size: 12, style: { marginRight: "2px" } }),
-          h("span", { className: "gqc-chip-label" }, "积分"),
-          h("span", { className: "gqc-chip-val" }, cb.limitNum === -1 ? "不限" : `${cb.remainingPercent}%`)
-        )
-      );
-    } else if (target === "gemini" && gW) {
-      // 智能聚焦 Gemini：官方 Gemini 彩色星标 + 7D + 5H
-      children.push(
-        h(
-          "span",
-          { key: "g-grp", className: "gqc-chip-group" },
-          h(GeminiIcon, { size: 12, style: { marginRight: "2px" } }),
-          h("span", { className: "gqc-chip-label" }, "7D"),
-          h("span", { className: "gqc-chip-val" }, `${gW.remaining}%`),
-          g5 ? h("span", { className: "gqc-chip-sep" }) : null,
-          g5 ? h("span", { className: "gqc-chip-label" }, "5H") : null,
-          g5 ? h("span", { className: "gqc-chip-val" }, `${g5.remaining}%`) : null
-        )
-      );
-    } else if (target === "codex" && cW) {
-      // 智能聚焦 Codex：官方 OpenAI 漩涡图标 + 7D + 5H
-      children.push(
-        h(
-          "span",
-          { key: "c-grp", className: "gqc-chip-group" },
-          h(OpenAiIcon, { size: 12, style: { marginRight: "2px", color: "var(--color-text-primary, #18181b)" } }),
-          h("span", { className: "gqc-chip-label" }, "7D"),
-          h("span", { className: "gqc-chip-val" }, `${cW.remaining}%`),
-          c5 ? h("span", { className: "gqc-chip-sep" }) : null,
-          c5 ? h("span", { className: "gqc-chip-label" }, "5H") : null,
-          c5 ? h("span", { className: "gqc-chip-val" }, `${c5.remaining}%`) : null
-        )
-      );
-    } else {
-      // 多模型概览展示
-      let hasPrior = false;
-      if (gW) {
-        const gItems = [
-          h(GeminiIcon, { key: "g-ico", size: 11, style: { marginRight: "1.5px" } }),
-          h("span", { key: "g-7d-l", className: "gqc-chip-label" }, "7D"),
-          h("span", { key: "g-7d-v", className: "gqc-chip-val" }, `${gW.remaining}%`),
-        ];
-        children.push(h("span", { key: "g-grp", className: "gqc-chip-group" }, ...gItems));
-        hasPrior = true;
-      }
-      if (cW) {
-        if (hasPrior) children.push(h("span", { key: "sep-c", className: "gqc-chip-sep" }));
-        const cItems = [
-          h(OpenAiIcon, { key: "c-ico", size: 11, style: { marginRight: "1.5px", color: "var(--color-text-primary, #18181b)" } }),
-          h("span", { key: "c-7d-l", className: "gqc-chip-label" }, "7D"),
-          h("span", { key: "c-7d-v", className: "gqc-chip-val" }, `${cW.remaining}%`),
-        ];
-        children.push(h("span", { key: "c-grp", className: "gqc-chip-group" }, ...cItems));
-        hasPrior = true;
-      }
-      if (cb && !cb.error) {
-        if (hasPrior) children.push(h("span", { key: "sep-cb", className: "gqc-chip-sep" }));
-        const cbItems = [
-          h(CodeBuddyIcon, { key: "cb-ico", size: 11, style: { marginRight: "1.5px" } }),
-          h("span", { key: "cb-l", className: "gqc-chip-label" }, "积分"),
-          h("span", { key: "cb-v", className: "gqc-chip-val" }, cb.limitNum === -1 ? "不限" : `${cb.remainingPercent}%`),
-        ];
-        children.push(h("span", { key: "cb-grp", className: "gqc-chip-group" }, ...cbItems));
-      }
+    const weekly = data.weekly ?? data.h5;
+    if (!weekly) return null;
+    if (mode !== "weekly_only" && data.weekly && data.h5 && mode !== "all") {
+      return { label: "7D", display: weekly.remaining + "%", secondary: data.h5.remaining + "%",
+        percent: Math.min(weekly.remaining, data.h5.remaining) };
     }
-    if (loading) {
-      children.push(h(RefreshIcon, { key: "spin", spinning: true, size: 11 }));
-    }
+    return { label: data.weekly ? "7D" : "5H", display: weekly.remaining + "%", percent: weekly.remaining };
+  }
 
-    return h(
-      "div",
-      { style: { display: "inline-flex", alignItems: "center", position: "relative" } },
-      h(
-        "button",
-        {
-          type: "button",
-          className: `gqc-status-chip${showPopover ? " is-active" : ""}`,
-          title: titleTip,
-          onClick: (e) => {
-            e.stopPropagation();
-            setShowPopover((prev) => !prev);
-          },
-        },
-        ...children
+  function StatusBarChip() {
+    const state = useQuotaState();
+    const [showPopover, setShowPopover] = useState(false);
+    const chipRef = useRef(null);
+    const closePopover = useCallback(() => {
+      setShowPopover(false);
+      chipRef.current?.focus();
+    }, []);
+    if (ctx.host?.isWeb || !state.initialized || state.config.showStatusBarChip === false) return null;
+
+    const { data, activeEngine, visibleServices, config } = state;
+    const mode = typeof config.statusBarDisplay === "string" ? config.statusBarDisplay : "auto";
+    const fixedService = mode.endsWith("_only") ? mode.slice(0, -5) : null;
+    const idsWithData = visibleServices.filter((id) => quotaSummary(id, data?.[id], mode));
+    const initialService = resolveService(visibleServices, fixedService, serviceForEngine(activeEngine), ...idsWithData);
+    const overview = mode === "all" || mode === "weekly_only";
+    const candidates = overview ? idsWithData : [initialService].filter(Boolean);
+    const summaries = candidates.slice(0, 2).map((id) => {
+      const summary = quotaSummary(id, data?.[id], mode);
+      return summary ? { id, ...summary } : null;
+    }).filter(Boolean);
+    const names = summaries.map(({ id, label, display, secondary }) =>
+      services[id].name + " " + label + " " + display + (secondary ? "，5H " + secondary : ""));
+    if (candidates.some((id) => data?.[id]?.refreshError)) names.push("显示上次成功数据");
+    const title = [...names, "打开 AI 配额与用量"].join(" · ");
+    const low = candidates.some((id) => {
+      const percent = quotaSummary(id, data?.[id], mode)?.percent;
+      return Number.isFinite(percent) && percent < (config.warningThreshold ?? 20);
+    });
+
+    return h("div", { className: "gqc-status-anchor" },
+      h("button", { ref: chipRef, type: "button", title, "aria-label": title, "aria-haspopup": "dialog",
+        "aria-expanded": showPopover, className: "gqc-status-chip" + (showPopover ? " is-active" : "") + (low ? " is-low" : ""),
+        onClick: (event) => {
+          event.stopPropagation();
+          if (!showPopover) probeLocalService(resolveService(visibleServices, state.preferredService, initialService));
+          setShowPopover(!showPopover);
+        } },
+        summaries.length === 0 && h("span", { className: "gqc-chip-group" },
+          h(initialService ? services[initialService].icon : QuotaIcon, { size: 12 }),
+          initialService ? services[initialService].name : "AI 配额",
+        ),
+        summaries.map(({ id, label, display, secondary }) => h("span", { key: id, className: "gqc-chip-group" },
+          h(services[id].icon, { size: 12 }),
+          h("span", { className: "gqc-chip-label" }, label),
+          h("span", { className: "gqc-chip-val" }, display),
+          secondary && h("span", { className: "gqc-chip-label" }, "5H"),
+          secondary && h("span", { className: "gqc-chip-val" }, secondary),
+        )),
+        candidates.length > 2 && h("span", { className: "gqc-chip-label" }, "+" + (candidates.length - 2)),
       ),
-      showPopover
-        ? h(QuotaPopover, {
-            data,
-            loading,
-            usageLoading,
-            error,
-            activeEngine,
-            onClose: () => setShowPopover(false),
-          })
-        : null
+      showPopover && h(QuotaPopover, { state, initialService, onClose: closePopover }),
     );
   }
 
@@ -2236,61 +2325,74 @@ export default function activate(ctx) {
   ctx.ui.registerCommand({
     key: "ai-quota:refresh",
     title: () => "AI 配额: 刷新用量与积分",
-    keywords: () => ["gemini", "codex", "codebuddy", "chatgpt", "quota", "credits", "积分", "周限", "额度", "用量"],
+    keywords: () => ["gemini", "codex", "codebuddy", "opencode", "grok", "chatgpt", "quota", "credits", "积分", "周限", "额度", "用量"],
     run: () => {
       void fetchQuota(true);
     },
   });
 
-  // ── 监听活动会话引擎切换（智能感知） ──────────────────────────────────────────
   const unsubSession = ctx.events.on("session://activated", (payload) => {
-    if (payload && typeof payload === "object") {
-      activeEngine = payload.engine || null;
-      notifySubscribers();
+    activeEngine = payload && typeof payload === "object" ? payload.engine : null;
+    if (!config.statusBarDisplay || config.statusBarDisplay === "auto") {
+      const id = serviceForEngine(activeEngine);
+      if (visibleServices.includes(id)) preferredService = id;
     }
+    notifySubscribers();
   });
 
-  // ── 初始化与定时刷新 ────────────────────────────────────────────────────────
-  async function init() {
-    try {
-      const cached = await ctx.storage.get("cached_quota");
-      if (cached) {
-        cachedData = cached;
-        notifySubscribers();
-      }
-    } catch (_) {}
+  const configKeys = ["autoRefreshMinutes", "statusBarDisplay", "showStatusBarChip", "warningThreshold"];
 
-    void fetchQuota(false);
+  function autoRefreshMinutes() {
+    const minutes = config.autoRefreshMinutes;
+    return Number.isFinite(minutes) && minutes >= 0 && minutes <= 120 ? minutes : 30;
+  }
 
-    try {
-      const cfg = (await ctx.storage.get("config")) || {};
-      let minutes = typeof cfg.autoRefreshMinutes === "number" ? cfg.autoRefreshMinutes : 30;
-      if (minutes === 10) {
-        minutes = 30;
-        cfg.autoRefreshMinutes = 30;
-        void ctx.storage.set("config", cfg);
-      }
-      if (minutes > 0) {
-        autoTimer = setInterval(() => {
-          void fetchQuota(false);
-        }, minutes * 60 * 1000);
-      }
-    } catch (e) {
-      console.warn("[gemini-quota] init timer error:", e);
+  function restartAutoRefresh() {
+    clearInterval(autoTimer);
+    const interval = autoRefreshMinutes();
+    if (!ctx.host?.isWeb && interval > 0) {
+      autoTimer = setInterval(fetchQuota, interval * 60 * 1000);
     }
+  }
+
+  const configChanges = new Map();
+  const unsubConfig = ctx.events.on("plugin-config://changed", (event) => {
+    if (event?.pluginId !== ctx.pluginId || !configKeys.includes(event.key)) return;
+    if (!initialized) configChanges.set(event.key, event.value);
+    config = { ...config, [event.key]: event.value };
+    if (initialized && event.key === "autoRefreshMinutes") restartAutoRefresh();
+    notifySubscribers();
+  });
+
+  async function init() {
+    const [cache, selection, legacyConfig, ...fields] = await Promise.allSettled(
+      ["cached_quota", "visible_quota_services", "config", ...configKeys.map((key) => "config." + key)]
+        .map((key) => ctx.storage.get(key)),
+    );
+    if (disposed) return;
+    cachedData = cache.status === "fulfilled" && cache.value ? legacyCacheData(cache.value) : null;
+    config = { ...(legacyConfig.status === "fulfilled" ? legacyConfig.value : null) };
+    for (const [index, field] of fields.entries()) {
+      if (field.status === "fulfilled" && field.value != null) config[configKeys[index]] = field.value;
+    }
+    config = { ...config, ...Object.fromEntries(configChanges) };
+    configChanges.clear();
+    visibleServices = normalizeVisibleServices(selection.status === "fulfilled" ? selection.value : undefined, knownServiceIds);
+    initialized = true;
+    notifySubscribers();
+    restartAutoRefresh();
+    if (autoRefreshMinutes() > 0) void fetchQuota();
   }
 
   void init();
 
-  // ── 清理函数 ────────────────────────────────────────────────────────────────
   return () => {
-    if (autoTimer) {
-      clearInterval(autoTimer);
-      autoTimer = null;
-    }
-    if (typeof unsubSession === "function") {
-      unsubSession();
-    }
+    disposed = true;
+    clearInterval(autoTimer);
+    connections.clear();
+    pending.clear();
+    if (typeof unsubSession === "function") unsubSession();
+    if (typeof unsubConfig === "function") unsubConfig();
     subscribers.clear();
   };
 }

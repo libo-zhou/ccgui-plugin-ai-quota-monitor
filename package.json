@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",
-    "validate": "node scripts/validate.mjs"
-  }
+    "validate": "node scripts/validate.mjs",
+    "test": "node --test scripts/quota-services.test.mjs scripts/codebuddy-auth.test.mjs"
+  },
+  "type": "module"
 }

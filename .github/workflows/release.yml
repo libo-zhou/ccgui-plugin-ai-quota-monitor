@@ -21,6 +21,7 @@ jobs:
           version: 10
       - name: Build and validate
         run: |
+          pnpm test
           pnpm build
           pnpm validate
           node -e "const m=require('./manifest.json'); if (m.version !== process.env.GITHUB_REF_NAME) { throw new Error('Tag must equal manifest version'); }"

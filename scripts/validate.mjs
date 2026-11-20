@@ -15,7 +15,8 @@ async function read(relativePath) {
 }
 
 const manifestBuffer = await read("manifest.json");
-const source = await read("src/main.js");
+const sources = await Promise.all(["src/quota-services.js", "src/main.js"].map(read));
+const source = sources.every(Boolean) ? Buffer.from(sources.map((part) => part.toString("utf8")).join("\n")) : null;
 const installedEntry = await read("main.js");
 const styles = await read("styles.css");
 const readme = await read("README.md");
@@ -44,8 +45,8 @@ if (manifest) {
 }
 
 if (manifestBuffer && !manifestBuffer.equals(await read("dist/manifest.json"))) errors.push("dist/manifest.json 与根 manifest 不一致");
-if (source && installedEntry && !source.equals(installedEntry)) errors.push("main.js 与 src/main.js 不一致，请运行 pnpm build");
-if (source && !source.equals(await read("dist/main.js"))) errors.push("dist/main.js 与 src/main.js 不一致，请运行 pnpm build");
+if (source && installedEntry && !source.equals(installedEntry)) errors.push("main.js 与 src 源码不一致，请运行 pnpm build");
+if (source && !source.equals(await read("dist/main.js"))) errors.push("dist/main.js 与 src 源码不一致，请运行 pnpm build");
 if (styles && !styles.equals(await read("dist/styles.css"))) errors.push("dist/styles.css 与根 styles.css 不一致，请运行 pnpm build");
 
 if (source) {
@@ -55,7 +56,14 @@ if (source) {
   if (/__TAURI__|\blocalStorage\b/.test(text)) errors.push("main.js 命中禁止访问宿主 API / localStorage");
   if (/import\s*\(\s*["']https?:\/\//.test(text)) errors.push("main.js 命中远程动态 import");
   for (const [code, permission] of [
-    ["plugin_http_request", "network:chatgpt.com"],
+    ["https://chatgpt.com", "network:chatgpt.com"],
+    ["http://127.0.0.1:4096", "network:127.0.0.1:4096"],
+    ["https://management-api.x.ai", "network:management-api.x.ai:443"],
+    ["https://opencode.ai", "network:opencode.ai:443"],
+    ["https://open.bigmodel.cn", "network:open.bigmodel.cn:443"],
+    ["https://api.z.ai", "network:api.z.ai:443"],
+    ["https://api.kimi.com", "network:api.kimi.com:443"],
+    ["ctx.limits", "limits.read"],
     ["plugin_exec_run", "exec:node"],
     ["google-antigravity", "exec:omp"],
     ["agy", "exec:agy"],
