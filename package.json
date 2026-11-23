@@ -1,0 +1,8 @@
+{
+  "name": "ai-quota-monitor",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "validate": "node scripts/validate.mjs"
+  }
+}
