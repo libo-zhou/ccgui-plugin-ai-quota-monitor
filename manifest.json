@@ -1,0 +1,98 @@
+{
+  "id": "ai-quota-monitor",
+  "name": "AI 配额与用量监控",
+  "version": "0.7.0",
+  "sdkVersion": "^0.3.25",
+  "tier": "js",
+  "description": "查看 Gemini、Codex、CodeBuddy、OpenCode、Claude、Grok、GLM、Kimi 的配额与积分，最多自选三个页签展示，并统计本地 Token 用量、成本及热力图。",
+  "permissions": [
+    "storage",
+    "events",
+    "ui:status-bar",
+    "ui:command",
+    "exec:omp",
+    "exec:agy",
+    "exec:node",
+    "network:chatgpt.com",
+    "network:copilot.tencent.com",
+    "network:127.0.0.1:4096",
+    "network:management-api.x.ai:443",
+    "network:opencode.ai:443",
+    "network:open.bigmodel.cn:443",
+    "network:api.z.ai:443",
+    "network:api.kimi.com:443",
+    "limits.read"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "autoRefreshMinutes": {
+        "type": "number",
+        "title": "后台自动刷新周期（分钟）",
+        "description": "设置后台自动查询周限的间隔；设为 0 表示关闭自动刷新（仅手动刷新）。",
+        "default": 30,
+        "minimum": 0,
+        "maximum": 120
+      },
+      "statusBarDisplay": {
+        "type": "string",
+        "title": "状态栏显示模式",
+        "description": "auto 随当前会话切换。all 和 weekly_only 显示简要概览，也可以固定某个服务；隐藏的服务不会出现在状态栏。",
+        "enum": [
+          "auto",
+          "all",
+          "weekly_only",
+          "gemini_only",
+          "codex_only",
+          "codebuddy_only",
+          "opencode_only",
+          "grok_only",
+          "glm_only",
+          "kimi_only",
+          "claude_only",
+          "grok-subscription_only"
+        ],
+        "default": "auto"
+      },
+      "showStatusBarChip": {
+        "type": "boolean",
+        "title": "在底部状态栏展示",
+        "description": "在应用右下角状态栏展示配额胶囊。",
+        "default": true
+      },
+      "warningThreshold": {
+        "type": "number",
+        "title": "周限低额度告警阈值（%）",
+        "description": "当当前模型剩余百分比低于此数值时，指示点显示为红色警示。",
+        "default": 20,
+        "minimum": 5,
+        "maximum": 50
+      }
+    }
+  },
+  "minAppVersion": "1.2.1",
+  "author": "libo-zhou",
+  "repo": "libo-zhou/ccgui-plugin-ai-quota-monitor",
+  "keywords": [
+    "ai",
+    "quota",
+    "usage",
+    "Gemini",
+    "Codex",
+    "CodeBuddy",
+    "credits",
+    "积分",
+    "OpenCode",
+    "Grok",
+    "xAI",
+    "Claude",
+    "GLM",
+    "Kimi"
+  ],
+  "screenshots": [
+    "docs/codex-quota.png",
+    "docs/usage-stats.png",
+    "docs/manage-services.png"
+  ],
+  "license": "MIT"
+}
